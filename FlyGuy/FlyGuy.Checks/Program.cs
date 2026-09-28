@@ -19,7 +19,7 @@ var paired=new Brain(); var unpaired=new Brain();
 for(int trial=0;trial<12;trial++)
  for(int i=0;i<120*8;i++)
  {
-    var p=new double[19]; var u=new double[19];
+    var p=new double[Sensors.InputCount]; var u=new double[Sensors.InputCount];
     p[0]=u[0]=i<120 ? 1 : 0;
     p[17]=i>=120 && i<240 ? 1 : 0;
     u[17]=i>=720 && i<840 ? 1 : 0;
@@ -28,7 +28,7 @@ for(int trial=0;trial<12;trial++)
 Check(paired.Plasticity.Weights[0]<unpaired.Plasticity.Weights[0]-.05,"Paired reward depresses cue weight more than delayed reward");
 Check(paired.Plasticity.Weights[1]==1,"Inactive cue remains unchanged");
 Console.WriteLine($"Paired {paired.Plasticity.Weights[0]:F4}, delayed {unpaired.Plasticity.Weights[0]:F4}");
-var probe=new double[19]; probe[0]=1;
+var probe=new double[Sensors.InputCount]; probe[0]=1;
 MotorActivity pm=default, um=default;
 for(int i=0;i<240;i++) { pm=paired.Step(probe,Simulation.Dt); um=unpaired.Step(probe,Simulation.Dt); }
 Check(Math.Abs(pm.Turn-um.Turn)>.005,"Learned weights alter motor response to cue");
@@ -39,10 +39,10 @@ var sense=new Sensors(); var creature=new Creature {Position=new(500,500)};
 sense.Sample(creature,world,new(0,0),Simulation.Dt,[new(new(1000,1000))],false,0,0);
 Check(sense.Values[11]==0 && sense.Values[12]==0 && sense.Values[13]==0,"Distant sugar is not sensed");
 
-var habituated=new Brain(); var cue=new double[19]; cue[0]=1;
+var habituated=new Brain(); var cue=new double[Sensors.InputCount]; cue[0]=1;
 for(int i=0;i<120*60;i++) habituated.Step(cue,Simulation.Dt);
 double high=habituated.Drives[5];
-for(int i=0;i<120*60;i++) habituated.Step(new double[19],Simulation.Dt);
+for(int i=0;i<120*60;i++) habituated.Step(new double[Sensors.InputCount],Simulation.Dt);
 Check(high>.9 && habituated.Drives[5]<.02,"Habituation accumulates and recovers");
 for(int seed=1;seed<=5;seed++)
 {

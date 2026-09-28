@@ -4,13 +4,15 @@ A Windows desktop creature driven by a small recurrent neural simulation. **Mile
 
 ## Run
 
+Fly Spray adds local aversive receptors, separate reward/punishment learning, acute arousal and slowly recovering stress. See [mechanisms, sources and experiments](docs/SPRAY.md).
+
 Install the .NET 10 SDK on Windows, then from this directory:
 
 ```powershell
 dotnet run --project FlyGuy/FlyGuy.Desktop
 ```
 
-The creature appears in a transparent, topmost, click-through window. Move the cursor near it to stimulate its bilateral visual populations. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. No global hooks, screen capture, network access or startup registration.
+The creature appears in a transparent, topmost window. Move the cursor near it to stimulate its bilateral visual populations, or grab it with the left mouse button. Select Sugar or Fly Spray in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. No global hooks, screen capture, network access or startup registration.
 
 ```powershell
 dotnet run --project tests/FlyGuy.Checks -c Release
@@ -21,9 +23,9 @@ Published output requires the .NET 10 Windows Desktop Runtime.
 
 ## How it works
 
-Cursor bearing/distance, edge rays, velocity, movement, heading and quiet time become sensory population currents. Twenty rate populations evolve synchronously at 120 Hz with recurrent excitation/inhibition, slow adaptation and seeded neural noise. Six slow drives modulate neural current. Four motor populations provide thrust, opposing turn signals and braking. Only those outputs feed the body physics; no chase/wander/startle state machine selects movement. Animation follows actual travel. Boundary projection prevents leaving the monitor union but does not choose a heading.
+Cursor bearing/distance, edge rays, velocity, movement, heading, quiet time, food and spray receptors become sensory population currents. Forty-seven rate populations evolve synchronously at 120 Hz with recurrent excitation/inhibition, adaptation and seeded neural noise. Drives, metabolism, arousal and stress modulate neural processing. Reward and aversive signals modify opposing cue readouts through eligibility-based plasticity. Four locomotor populations provide thrust, opposing turn signals and braking; a feeding population gates ingestion. Only locomotor outputs feed the body physics; no chase/wander/startle state machine selects movement. Animation follows actual travel. Boundary projection prevents leaving the monitor union but does not choose a heading.
 
-The inspector displays every population, signed connections, drive values, motor output history and measured frame/tick rates. Cyan connections excite; coral connections inhibit. Synthetic populations are functional abstractions, not identified Drosophila cell types. The network's varied movement is an experiment, not evidence of biological realism, intelligence or learning.
+The inspector displays every population, signed connections, drives, reward/aversion, acute arousal, slow stress, sensitization, both plastic weight sets and 120-second histories. Recovery rates can be adjusted independently. Cyan connections excite; coral connections inhibit. Synthetic populations are functional abstractions, not identified Drosophila cell types. Automated conditioning experiments demonstrate limited associative plasticity, not biological realism or general intelligence.
 
 ## Limits
 

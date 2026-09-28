@@ -53,3 +53,4 @@ Require(feeding.Brain.Plasticity.Weights.SequenceEqual(saved.Weights), "Learning
 saved.Weights[0] = 1;
 Require(feeding.Brain.Plasticity.Weights[0] < .99, "Imported weights alias the saved state");
 Console.WriteLine($"PASS: 10 simulated minutes; deterministic replay, finite activity, monitor containment, cursor/edge responses, motor ablation, feeding, metabolism, selective reward learning, reset and learned-state round trip. Travel {travelled:F0}px, peak turn {turnRange:F2}. Elapsed {timer.Elapsed.TotalSeconds:F2}s.");
+SprayChecks.RunAll();

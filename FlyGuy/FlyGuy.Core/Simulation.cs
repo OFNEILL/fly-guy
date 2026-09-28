@@ -34,12 +34,13 @@ public sealed class Creature
 }
 public sealed class Sensors
 {
-    public const int InputCount = 19;
+    public const int InputCount = 22;
+    public const int SprayLeft = 19, SprayRight = 20, SprayContact = 21;
     public static readonly string[] Names = ["Cursor left", "Cursor right", "Edge left", "Edge right", "Edge front", "Speed", "Moving", "Novelty", "Quiet time", "Heading sin", "Heading cos"];
     public double[] Values { get; } = new double[InputCount];
     private Vec? previousCursor;
     private double quiet; private Vec? previousForApproach;
-    public void Sample(Creature c, Habitat world, Vec cursor, double dt, IReadOnlyList<Sugar> sugar, bool held, double touch, double reward)
+    public void Sample(Creature c, Habitat world, Vec cursor, double dt, IReadOnlyList<Sugar> sugar, bool held, double touch, double reward, IReadOnlyList<SprayCloud>? spray = null)
     {
         var offset = cursor - c.Position;
         var relative = Math.Atan2(offset.Y, offset.X) - c.Heading;
@@ -69,6 +70,10 @@ public sealed class Sensors
         var cursorVelocity = previousForApproach is { } prior ? (cursor - prior) * (1 / dt) : new Vec();
         Values[18] = Math.Clamp(-(cursorVelocity.X * offset.X + cursorVelocity.Y * offset.Y) / Math.Max(1, offset.Length) / 600, 0, 1) * proximity;
         previousForApproach = cursor;
+        double Irritant(Vec p) => Math.Clamp(spray?.Sum(cloud => cloud.Sample(p)) ?? 0, 0, 1);
+        Values[SprayLeft] = Irritant(c.Position + Vec.Direction(c.Heading - .7) * 20);
+        Values[SprayRight] = Irritant(c.Position + Vec.Direction(c.Heading + .7) * 20);
+        Values[SprayContact] = Irritant(c.Position);
     }
 }
 public readonly record struct Synapse(int From, int To, double Weight);
@@ -77,22 +82,36 @@ public readonly record struct MotorActivity(double Forward, double Turn, double 
 /// <summary>Synthetic population rate model. No measured connectome weights.</summary>
 public sealed class Brain
 {
-    public string[] Names { get; } = [.. Sensors.Names, "Explore L", "Explore R", "Orient L", "Orient R", "Threat", "Forward", "Turn L", "Turn R", "Brake", "Food L", "Food R", "Taste", "Touch", "Held", "Motion", "Ingestion", "Looming", "KC cursor L", "KC cursor R", "KC food L", "KC food R", "Avoid cursor L", "Avoid cursor R", "Avoid food L", "Avoid food R", "PAM reward", "Feed"];
-    public double[] Activity { get; } = new double[38];
+    public const int SprayLeft = 38, SprayRight = 39, SprayContact = 40, Punishment = 41, ApproachStart = 42, LearnedThreat = 46;
+    public const int PopulationCount = 47;
+    public string[] Names { get; } = [.. Sensors.Names, "Explore L", "Explore R", "Orient L", "Orient R", "Threat", "Forward", "Turn L", "Turn R", "Brake", "Food L", "Food R", "Taste", "Touch", "Held", "Motion", "Ingestion", "Looming", "KC cursor L", "KC cursor R", "KC food L", "KC food R", "Avoid cursor L", "Avoid cursor R", "Avoid food L", "Avoid food R", "PAM-like reward", "Feed", "Spray L", "Spray R", "Spray contact", "PPL1-like aversion", "Approach cursor L", "Approach cursor R", "Approach food L", "Approach food R", "Learned threat"];
+    public double[] Activity { get; } = new double[PopulationCount];
     public double[] Drives { get; } = [.6, 0, .3, 0, .5, 0];
     public static readonly string[] DriveNames = ["Curiosity", "Fatigue", "Arousal", "Startle", "Attraction", "Habituation"];
     public List<Synapse> Connections { get; } = [];
-    private readonly double[] adaptation = new double[38], next = new double[38], noise = new double[38];
+    private readonly double[] adaptation = new double[PopulationCount], next = new double[PopulationCount], noise = new double[PopulationCount];
     private readonly Random random;
     public IPlasticity Plasticity { get; }
     public double Hunger { get; private set; } = .65;
     public double Energy { get; private set; } = .7;
     public double Dopamine { get; private set; }
-    public LearnedState ExportLearning() => new(1, (double[])Plasticity.Weights.Clone());
+    public ThreatModulation Threat { get; } = new();
+    private ThreatSettings threatSettings = new();
+    public ThreatSettings ThreatSettings
+    {
+        get => threatSettings;
+        set { ArgumentNullException.ThrowIfNull(value); value.Validate(); threatSettings = value; }
+    }
+    public LearnedState ExportLearning() => new(2, (double[])Plasticity.Weights.Clone(), (double[])Plasticity.ApproachWeights.Clone());
     public void ImportLearning(LearnedState state)
     {
-        if (state.Version != 1 || state.Weights.Length != 4 || state.Weights.Any(w => !double.IsFinite(w) || w < .05 || w > 1)) throw new ArgumentException("Invalid learned state");
+        static bool Valid(double[]? weights) => weights is { Length: 4 } && weights.All(w => double.IsFinite(w) && w >= .05 && w <= 1);
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Version is not (1 or 2) || !Valid(state.Weights) || (state.Version == 2 && !Valid(state.ApproachWeights))) throw new ArgumentException("Invalid learned state");
         state.Weights.CopyTo(Plasticity.Weights, 0);
+        if (state.Version == 2) state.ApproachWeights!.CopyTo(Plasticity.ApproachWeights, 0);
+        else Array.Fill(Plasticity.ApproachWeights, 1);
+        UpdatePlasticConnections();
     }
     public Brain(int seed = 7, IPlasticity? plasticity = null)
     {
@@ -112,13 +131,34 @@ public sealed class Brain
         {
             Link(k < 2 ? k : k + 18,28+k,1);
             Link(28+k,32+k,1);
-            Link(28+k,k%2==0 ? 13 : 14,3);
-            Link(32+k,k%2==0 ? 13 : 14,-3);
+            Link(28+k,ApproachStart+k,1);
+            Link(ApproachStart+k,k%2==0 ? 13 : 14,8);
+            Link(32+k,k%2==0 ? 13 : 14,-8);
+            Link(32+k,k%2==0 ? 18 : 17,4);
+            Link(ApproachStart+k,k%2==0 ? 18 : 17,-4);
+            Link(32+k,LearnedThreat,.5);
+            Link(ApproachStart+k,LearnedThreat,-.5);
         }
+        Link(SprayLeft,15,2); Link(SprayRight,15,2); Link(SprayContact,15,4);
+        Link(SprayLeft,18,7); Link(SprayRight,17,7);
+        Link(SprayLeft,Punishment,.35); Link(SprayRight,Punishment,.35); Link(SprayContact,Punishment,.8);
+        Link(LearnedThreat,15,5);
         Activity[11] = .15; Activity[12] = .08;
+    }
+    private void UpdatePlasticConnections()
+    {
+        for (int k = 0; k < 4; k++)
+        {
+            int avoidance = Connections.FindIndex(e => e.From == 28+k && e.To == 32+k);
+            int approach = Connections.FindIndex(e => e.From == 28+k && e.To == ApproachStart+k);
+            // Missing edges are legitimate circuit ablations.
+            if (avoidance >= 0) Connections[avoidance] = new(28+k,32+k,Plasticity.Weights[k]);
+            if (approach >= 0) Connections[approach] = new(28+k,ApproachStart+k,Plasticity.ApproachWeights[k]);
+        }
     }
     public MotorActivity Step(double[] senses, double dt)
     {
+        if (senses.Length != Sensors.InputCount) throw new ArgumentException($"Expected {Sensors.InputCount} sensory inputs", nameof(senses));
         double Ease(double old, double target, double tau) => old + (target - old) * (1 - Math.Exp(-dt / tau));
         Drives[0] = Ease(Drives[0], .3 + .7 * senses[8], 10);
         Drives[1] = Ease(Drives[1], senses[5], 35);
@@ -126,10 +166,16 @@ public sealed class Brain
         Drives[3] = Ease(Drives[3], Math.Max(senses[7], senses[4]), .6);
         Drives[4] = Ease(Drives[4], 1 - Drives[5], 8);
         Drives[5] = Ease(Drives[5], Math.Clamp(senses[0] + senses[1], 0, 1), 12);
-        for (int i = 0; i < 11; i++) next[i] = Ease(Activity[i], senses[i], .07);
-        for (int i = 11; i < 38; i++)
+        double sensoryGain = 1 + .5 * Threat.AcuteArousal + .35 * Threat.Stress;
+        for (int i = 0; i < 11; i++) next[i] = Ease(Activity[i], Math.Clamp(senses[i] * (i < 2 ? sensoryGain * (1 - .25 * Drives[5]) : 1), 0, 1), .07 / (1 + Threat.AcuteArousal));
+        for (int i = 11; i < PopulationCount; i++)
         {
             if(i >= 20 && i < 28) { next[i] = Ease(Activity[i], senses[i-9], .07); continue; }
+            if (i >= SprayLeft && i <= SprayContact)
+            {
+                next[i] = Ease(Activity[i], Math.Clamp(senses[Sensors.SprayLeft+i-SprayLeft] * (1 + Threat.Sensitization), 0, 1), .035);
+                continue;
+            }
             noise[i] = Ease(noise[i], random.NextDouble() * 2 - 1, .2);
             double current = -1.8 + noise[i] * .7 - adaptation[i] * (i is 11 or 12 ? 3.8 : .3);
             double synapticCurrent = 0;
@@ -146,15 +192,23 @@ public sealed class Brain
             if (i >= 32 && i < 36) { next[i] = synapticCurrent; continue; }
             if (i == 36) { next[i] = Ease(Activity[i], synapticCurrent, .12); continue; }
             if (i == 37) current += Hunger * 2;
-            next[i] = Ease(Activity[i], 1 / (1 + Math.Exp(-current)), .12);
+            if (i >= ApproachStart && i < ApproachStart + 4) { next[i] = Math.Clamp(synapticCurrent, 0, 1); continue; }
+            if (i is Punishment or LearnedThreat) { next[i] = Ease(Activity[i], Math.Clamp(synapticCurrent, 0, 1), .06); continue; }
+            if (i == 15) current += Threat.Stress * 1.5;
+            if (i == 16) current += Threat.AcuteArousal * 4 + Threat.Stress;
+            if (i is 17 or 18) current += Threat.AcuteArousal * .5;
+            if (i is 11 or 12) current -= Threat.Stress * 1.2;
+            if (i is 19 or 37) current -= Threat.AcuteArousal * 3 + Threat.Stress;
+            next[i] = Ease(Activity[i], 1 / (1 + Math.Exp(-current)), .12 / (1 + Threat.AcuteArousal));
         }
-        Array.Copy(next, Activity, 38);
+        Array.Copy(next, Activity, PopulationCount);
         Hunger = Math.Clamp(Hunger + dt * (.002 - senses[17] * .65), 0, 1);
         Energy = Math.Clamp(Energy + dt * (senses[17] * .8 - .0008 - senses[5] * .002), 0, 1);
         Dopamine = Ease(Dopamine, Activity[36], .7);
-        Plasticity.Tick([Activity[28], Activity[29], Activity[30], Activity[31]], Dopamine, dt);
-        for (int k=0;k<4;k++) { int index = Connections.FindIndex(e => e.From == 28+k && e.To == 32+k); Connections[index] = new(28+k,32+k,Plasticity.Weights[k]); }
-        for (int i = 11; i < 38; i++) adaptation[i] = Ease(adaptation[i], Activity[i], 2.5);
+        Threat.Tick(Activity[Punishment], Activity[LearnedThreat], ThreatSettings, dt);
+        Plasticity.Tick([Activity[28], Activity[29], Activity[30], Activity[31]], Dopamine, Threat.Aversion, Threat.Stress, dt);
+        UpdatePlasticConnections();
+        for (int i = 11; i < PopulationCount; i++) adaptation[i] = Ease(adaptation[i], Activity[i], 2.5);
         return new(Activity[16], Activity[18] - Activity[17], Activity[19]);
     }
 }
@@ -179,16 +233,23 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
     public Sensors Sensors { get; } = new();
     public Brain Brain { get; private set; } = new(seed);
     public List<Sugar> Sugar { get; } = [];
+    public List<SprayCloud> Spray { get; } = [];
     public bool Held { get; set; }
     public double Touch { get; set; }
     private double reward;
     public double Consumed { get; private set; }
-    public void ResetBrain() { Brain = new(seed); reward = 0; }
+    public void ResetBrain() { Brain = new(seed) { ThreatSettings = Brain.ThreatSettings }; reward = 0; }
     public void DropSugar(Vec position) { if(Sugar.Count < 64) Sugar.Add(new(Habitat.Constrain(position))); }
+    public void SprayAt(Vec position)
+    {
+        if (!double.IsFinite(position.X) || !double.IsFinite(position.Y) || !Habitat.Contains(position)) return;
+        if (Spray.Count >= 64) Spray.RemoveAt(0);
+        Spray.Add(new(position));
+    }
     public MotorActivity Motor { get; private set; }
     public void Step(Vec cursor)
     {
-        Sensors.Sample(Creature, Habitat, cursor, Dt, Sugar, Held, Touch, reward);
+        Sensors.Sample(Creature, Habitat, cursor, Dt, Sugar, Held, Touch, reward, Spray);
         Motor = Brain.Step(Sensors.Values, Dt);
         if (!Held) MotorSystem.Step(Creature, Motor, Habitat, Dt);
         reward = 0;
@@ -201,6 +262,8 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
         reward = Math.Clamp(reward, 0, 1);
         Sugar.RemoveAll(s => s.Amount <= 0);
         Touch *= Math.Exp(-Dt / .2);
+        foreach (var cloud in Spray) cloud.Tick(Dt);
+        Spray.RemoveAll(cloud => cloud.Concentration < .005);
     }
 }
 
