@@ -1,1 +1,5 @@
-<Solution />
+<Solution>
+  <Project Path="FlyGuy.Core/FlyGuy.Core.csproj" />
+  <Project Path="FlyGuy.Desktop/FlyGuy.Desktop.csproj" />
+  <Project Path="../tests/FlyGuy.Checks/FlyGuy.Checks.csproj" />
+</Solution>
