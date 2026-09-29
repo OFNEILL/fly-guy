@@ -4,6 +4,8 @@ A Windows desktop creature driven by a small recurrent neural simulation. **Mile
 
 ## Run
 
+Open **Fly Vision** for two independently sampled desktop eyes, five live visualisation modes and configurable geometry/update rates. The brain receives processed pixel signals; it no longer receives cursor coordinates. See [vision design, research and checks](docs/VISION.md).
+
 Fly Spray adds local aversive receptors, separate reward/punishment learning, acute arousal and slowly recovering stress. See [mechanisms, sources and experiments](docs/SPRAY.md).
 
 Install the .NET 10 SDK on Windows, then from this directory:
@@ -12,7 +14,7 @@ Install the .NET 10 SDK on Windows, then from this directory:
 dotnet run --project FlyGuy/FlyGuy.Desktop
 ```
 
-The creature appears in a transparent, topmost window. Move the cursor near it to stimulate its bilateral visual populations, or grab it with the left mouse button. Select Sugar or Fly Spray in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. No global hooks, screen capture, network access or startup registration.
+The creature appears in a transparent, topmost window. Move the cursor within its visual fields to stimulate its eyes, or grab it with the left mouse button. Select Sugar or Fly Spray in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. Nearby desktop pixels are processed in memory; no screenshots are saved or uploaded. No global hooks, OCR, network access or startup registration.
 
 ```powershell
 dotnet run --project tests/FlyGuy.Checks -c Release
@@ -23,7 +25,7 @@ Published output requires the .NET 10 Windows Desktop Runtime.
 
 ## How it works
 
-Cursor bearing/distance, edge rays, velocity, movement, heading, quiet time, food and spray receptors become sensory population currents. Forty-seven rate populations evolve synchronously at 120 Hz with recurrent excitation/inhibition, adaptation and seeded neural noise. Drives, metabolism, arousal and stress modulate neural processing. Reward and aversive signals modify opposing cue readouts through eligibility-based plasticity. Four locomotor populations provide thrust, opposing turn signals and braking; a feeding population gates ingestion. Only locomotor outputs feed the body physics; no chase/wander/startle state machine selects movement. Animation follows actual travel. Boundary projection prevents leaving the monitor union but does not choose a heading.
+Two 24×10 retinas sample different overlapping fields of desktop pixels. Luminance, contrast, temporal change and delayed-neighbor motion feed separate visual rate arrays and 55 brain populations. Explicit nonvisual pathways provide odor, taste, irritant/contact, boundary touch and proprioception. The brain runs at 120 Hz by default, independently of capture and rendering, with recurrent excitation/inhibition, adaptation and seeded neural noise. Drives, metabolism, arousal and stress modulate neural processing. Reward and aversive signals modify opposing cue readouts through eligibility-based plasticity. Four locomotor populations provide thrust, opposing turn signals and braking; a feeding population gates ingestion. Only locomotor outputs feed the body physics; no chase/wander/startle state machine selects movement. Animation follows actual travel. Boundary projection prevents leaving the monitor union but does not choose a heading.
 
 The inspector displays every population, signed connections, drives, reward/aversion, acute arousal, slow stress, sensitization, both plastic weight sets and 120-second histories. Recovery rates can be adjusted independently. Cyan connections excite; coral connections inhibit. Synthetic populations are functional abstractions, not identified Drosophila cell types. Automated conditioning experiments demonstrate limited associative plasticity, not biological realism or general intelligence.
 

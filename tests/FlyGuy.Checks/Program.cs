@@ -7,8 +7,7 @@ var a = new Simulation(habitat); var b = new Simulation(habitat);
 var timer=Stopwatch.StartNew(); double travelled=0, turnRange=0;
 for(int i=0;i<120*60*10;i++)
 {
-    Vec cursor=new(600+500*Math.Sin(i/1300.0),400+300*Math.Cos(i/1700.0));
-    var prior=a.Creature.Position; a.Step(cursor); b.Step(cursor);
+    var prior=a.Creature.Position; a.Step(); b.Step();
     Require(a.Creature.Position==b.Creature.Position,"Seeded replay diverged");
     Require(habitat.Contains(a.Creature.Position),"Escaped monitor union");
     Require(a.Brain.Activity.All(x=>double.IsFinite(x)&&x>=0&&x<=1),"Invalid neural activity");
@@ -32,7 +31,7 @@ Require(!gap.Contains(new(-100,50)) && gap.Contains(gap.Constrain(new(-100,50)))
 var feeding = new Simulation(habitat) { Held = true };
 feeding.DropSugar(feeding.Creature.Position);
 double initialHunger = feeding.Brain.Hunger, initialEnergy = feeding.Brain.Energy;
-for (int i = 0; i < 120 * 5; i++) feeding.Step(feeding.Creature.Position);
+for (int i = 0; i < 120 * 5; i++) feeding.Step();
 Require(feeding.Consumed > .9 && feeding.Consumed <= 1, "Feeding failed to conserve food mass");
 Require(feeding.Sugar.Count == 0, "Depleted sugar remained in the habitat");
 Require(feeding.Brain.Hunger < initialHunger && feeding.Brain.Energy > initialEnergy, "Ingestion did not replenish metabolism");
@@ -50,7 +49,8 @@ feeding.ResetBrain();
 Require(feeding.Brain.Plasticity.Weights.All(w => w == 1), "Brain reset retained learned weights");
 feeding.Brain.ImportLearning(saved);
 Require(feeding.Brain.Plasticity.Weights.SequenceEqual(saved.Weights), "Learning round trip failed");
-saved.Weights[0] = 1;
-Require(feeding.Brain.Plasticity.Weights[0] < .99, "Imported weights alias the saved state");
+saved.Weights[2] = 1;
+Require(feeding.Brain.Plasticity.Weights[2] < .99, "Imported weights alias the saved state");
 Console.WriteLine($"PASS: 10 simulated minutes; deterministic replay, finite activity, monitor containment, cursor/edge responses, motor ablation, feeding, metabolism, selective reward learning, reset and learned-state round trip. Travel {travelled:F0}px, peak turn {turnRange:F2}. Elapsed {timer.Elapsed.TotalSeconds:F2}s.");
 SprayChecks.RunAll();
+VisionChecks.RunAll();

@@ -66,6 +66,7 @@ internal sealed class Overlay : Window
     private nint handle;
     public Overlay(Simulation simulation)
     {
+        CaptureExclusion.Register(this);
         Width = Height = 96; WindowStyle = WindowStyle.None; AllowsTransparency = true;
         Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false;
         ShowActivated = false; ResizeMode = ResizeMode.NoResize; IsHitTestVisible = true;
@@ -116,7 +117,7 @@ internal sealed class Overlay : Window
         view.InvalidateVisual();
     }
 }
-internal sealed class BrainView(Simulation simulation) : FrameworkElement
+internal sealed class BrainView(Simulation simulation, WorkMeter? paintMeter = null) : FrameworkElement
 {
     private readonly Queue<double[]> history = new();
     public void Sample()
@@ -133,10 +134,11 @@ internal sealed class BrainView(Simulation simulation) : FrameworkElement
         => dc.DrawText(new FormattedText(text, System.Globalization.CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI"), size, brush ?? Brushes.LightGray, 1), new(x,y));
     protected override void OnRender(DrawingContext dc)
     {
+        long began=Stopwatch.GetTimestamp();
         var b = simulation.Brain;
         dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(19,25,35)), null, new Rect(0,0,ActualWidth,ActualHeight));
         Text(dc, "SYNTHETIC RATE NETWORK - cyan excitation / coral inhibition", 16,12,14);
-        Point Position(int i) => i < 11 ? new(85, 60 + i * 31) : i < 20 ? new(330, 60 + (i-11)*38) : i < 28 ? new(565,60+(i-20)*44) : i < 38 ? new(805,60+(i-28)*34) : new(1080,60+(i-38)*38);
+        Point Position(int i) => i < 11 ? new(85, 60 + i * 31) : i < 20 ? new(330, 60 + (i-11)*38) : i < 28 ? new(565,60+(i-20)*44) : i < 38 ? new(805,60+(i-28)*34) : i < 47 ? new(1080,60+(i-38)*38) : new(1340,60+(i-47)*42);
         foreach (var e in b.Connections)
         {
             var color = e.Weight > 0 ? Color.FromArgb((byte)(30+b.Activity[e.From]*125),70,210,210) : Color.FromArgb((byte)(30+b.Activity[e.From]*125),255,120,110);
@@ -187,6 +189,7 @@ internal sealed class BrainView(Simulation simulation) : FrameworkElement
         for (int ch = 9; ch <= 10; ch++)
             for (int i = 1; i < samples.Length; i++)
                 dc.DrawLine(new Pen(ch == 9 ? Brushes.Turquoise : Brushes.HotPink,1.5),new(18+(i-1)*.92,1280-samples[i-1][ch]*100),new(18+i*.92,1280-samples[i][ch]*100));
+        paintMeter?.Record(Stopwatch.GetElapsedTime(began).TotalSeconds);
     }
 }
 internal sealed class Inspector : Window
@@ -195,8 +198,11 @@ internal sealed class Inspector : Window
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly Overlay overlay;
     private readonly BrainView graph;
+    private readonly VisionRuntime vision;
+    private FlyVisionWindow? visionWindow;
+    private readonly System.Windows.Threading.DispatcherTimer updateTimer = new(System.Windows.Threading.DispatcherPriority.Normal) { Interval=TimeSpan.FromMilliseconds(4) };
     private readonly TextBlock status = new() { Margin = new Thickness(10), Foreground = Brushes.LightGray };
-    private double last, accumulator, sampled, topology, rateTime;
+    private double last, accumulator, sampled, topology, rateTime, lastRender;
     private int frames, ticks;
     private bool paused, sugarKey, sprayKey, toolKey;
     private double dropAt = double.PositiveInfinity;
@@ -211,12 +217,14 @@ internal sealed class Inspector : Window
     private Vec lastHeldPosition;
     public Inspector()
     {
+        CaptureExclusion.Register(this);
+        vision = new(clock);
         Title = "Fly Guy - neural laboratory";
         Width = Math.Min(1280, SystemParameters.WorkArea.Width);
         Height = Math.Min(1000, SystemParameters.WorkArea.Height);
         Background = new SolidColorBrush(Color.FromRgb(19,25,35));
         var root = new DockPanel(); Content = root;
-        graph = new BrainView(simulation) { Width=1210,Height=1310 };
+        graph = new BrainView(simulation,vision.BrainPaintMeter) { Width=1480,Height=1310 };
         var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin=new Thickness(10) };
         var pause = new System.Windows.Controls.Button { Content="Pause / resume", Padding=new Thickness(12,5,12,5) };
         pause.Click += (_,_) => paused=!paused;
@@ -227,6 +235,18 @@ internal sealed class Inspector : Window
         drop.Click+=(_,_)=> { pendingTool=tool.SelectedIndex; dropAt=clock.Elapsed.TotalSeconds+3; }; buttons.Children.Add(drop);
         var reset=new System.Windows.Controls.Button { Content="Reset brain", Margin=new Thickness(8,0,0,0) };
         reset.Click+=(_,_)=> { simulation.ResetBrain(); graph.ClearHistory(); }; buttons.Children.Add(reset);
+        var flyVision = new System.Windows.Controls.Button { Content="Fly Vision", Margin=new Thickness(8,0,0,0), Padding=new Thickness(8,3,8,3) };
+        flyVision.Click += (_,_) =>
+        {
+            if (visionWindow is null)
+            {
+                visionWindow = new(vision,simulation);
+                visionWindow.Closed += (_,_) => visionWindow=null;
+                visionWindow.Show();
+            }
+            else { if (visionWindow.WindowState==WindowState.Minimized) visionWindow.WindowState=WindowState.Normal; visionWindow.Activate(); }
+        };
+        buttons.Children.Add(flyVision);
         var help=new TextBlock { Text="Select Sugar or Fly Spray, then apply and move the cursor within 3 seconds. Ctrl+Shift+Space applies the selected tool immediately; Ctrl+Shift+S = sugar, Ctrl+Shift+F = spray. Escape cancels a countdown. Tools pause with the simulation. Grab the fly with left mouse.", Foreground=Brushes.LightGray, Margin=new Thickness(10), TextWrapping=TextWrapping.Wrap };
         DockPanel.SetDock(help,Dock.Top); root.Children.Add(help);
         DockPanel.SetDock(buttons,Dock.Top); root.Children.Add(buttons);
@@ -258,10 +278,11 @@ internal sealed class Inspector : Window
         DockPanel.SetDock(status,Dock.Bottom); root.Children.Add(status);
         root.Children.Add(new ScrollViewer { Content=graph, HorizontalScrollBarVisibility=ScrollBarVisibility.Auto, VerticalScrollBarVisibility=ScrollBarVisibility.Auto });
         overlay = new Overlay(simulation);
-        Loaded += (_,_) => { overlay.Show(); last=clock.Elapsed.TotalSeconds; CompositionTarget.Rendering += Render; };
-        Closed += (_,_) => { CompositionTarget.Rendering -= Render; overlay.Close(); foreach(var window in sugarWindows) window.Close(); foreach(var window in sprayWindows) window.Close(); };
+        updateTimer.Tick += Update;
+        Loaded += (_,_) => { overlay.Show(); last=clock.Elapsed.TotalSeconds; updateTimer.Start(); CompositionTarget.Rendering += Render; };
+        Closed += (_,_) => { updateTimer.Stop(); vision.Dispose(); CompositionTarget.Rendering -= Render; visionWindow?.Close(); overlay.Close(); foreach(var window in sugarWindows) window.Close(); foreach(var window in sprayWindows) window.Close(); };
     }
-    private void Render(object? sender, EventArgs args)
+    private void Update(object? sender, EventArgs args)
     {
         double now=clock.Elapsed.TotalSeconds, elapsed=now-last; last=now;
         if(now-topology>2) { simulation.Habitat=Native.ReadHabitat(); simulation.Creature.Position=simulation.Habitat.Constrain(simulation.Creature.Position); topology=now; }
@@ -292,31 +313,47 @@ internal sealed class Inspector : Window
             if(simulation.Creature.Velocity.Length>1500) simulation.Creature.Velocity*=1500/simulation.Creature.Velocity.Length;
         }
         lastHeldPosition=simulation.Creature.Position;
+        vision.Advance(now,simulation,paused);
+        if(!paused)
+        {
+            accumulator+=Math.Min(elapsed,.1);
+            double dt=1/vision.Eyes.Settings.BrainHz;
+            while(accumulator>=dt)
+            {
+                long began=Stopwatch.GetTimestamp();
+                simulation.Step(vision.Eyes.Signals,dt);
+                vision.BrainMeter.Record(Stopwatch.GetElapsedTime(began).TotalSeconds);
+                accumulator-=dt; ticks++;
+            }
+        }
+        else accumulator=0;
+        if(now-sampled>=.1) { if(!paused) graph.Sample(); sampled=now; }
+        if(now-rateTime>=1)
+        {
+            status.Text=$"{(paused ? "PAUSED" : "LIVE")}   {frames/(now-rateTime):F0} render FPS   {ticks/(now-rateTime):F0} ticks/s   speed {simulation.Creature.Velocity.Length:F1} px/s   {(double.IsFinite(dropAt) ? $"{(pendingTool == 1 ? "SPRAY" : "SUGAR")} in {Math.Max(0,dropAt-now):F1}s" : $"Spray clouds: {simulation.Spray.Count}")}\n{vision.Status}";
+            frames=ticks=0; rateTime=now;
+        }
+    }
+    private void Render(object? sender, EventArgs args)
+    {
+        double now=clock.Elapsed.TotalSeconds;
+        if (now<lastRender) return;
+        double period=1/vision.Eyes.Settings.RenderHz;
+        lastRender=now-lastRender>=period ? now+period : lastRender+period;
+        long began=Stopwatch.GetTimestamp();
         foreach(var food in simulation.Sugar)
             if(!sugarWindows.Any(w=>ReferenceEquals(w.Food,food))) { var window=new SugarWindow(food); sugarWindows.Add(window); window.Show(); }
         foreach(var window in sugarWindows.ToArray())
             if(!simulation.Sugar.Contains(window.Food)) { window.Close(); sugarWindows.Remove(window); }
             else window.Opacity=.3+.7*window.Food.Amount;
-        if(!paused)
-        {
-            accumulator+=Math.Min(elapsed,.1);
-            if(Native.GetCursorPos(out var cursor))
-                while(accumulator>=Simulation.Dt) { simulation.Step(new(cursor.X,cursor.Y)); accumulator-=Simulation.Dt; ticks++; }
-            else accumulator=0;
-        }
-        else accumulator=0;
         foreach (var cloud in simulation.Spray)
             if (!sprayWindows.Any(w=>ReferenceEquals(w.Cloud,cloud))) { var window=new SprayWindow(cloud); sprayWindows.Add(window); window.Show(); }
         foreach (var window in sprayWindows.ToArray())
             if (!simulation.Spray.Contains(window.Cloud)) { window.Close(); sprayWindows.Remove(window); }
             else window.Draw();
         overlay.Draw(simulation.Creature,simulation.Held); frames++;
-        if(now-sampled>=.1) { if(!paused) graph.Sample(); sampled=now; }
-        if(now-rateTime>=1)
-        {
-            status.Text=$"{(paused ? "PAUSED" : "LIVE")}   {frames/(now-rateTime):F0} render FPS   {ticks/(now-rateTime):F0} ticks/s   speed {simulation.Creature.Velocity.Length:F1} px/s   {(double.IsFinite(dropAt) ? $"{(pendingTool == 1 ? "SPRAY" : "SUGAR")} in {Math.Max(0,dropAt-now):F1}s" : $"Spray clouds: {simulation.Spray.Count}")}";
-            frames=ticks=0; rateTime=now;
-        }
+        visionWindow?.Refresh(now);
+        vision.RenderMeter.Record(Stopwatch.GetElapsedTime(began).TotalSeconds);
     }
 }
 

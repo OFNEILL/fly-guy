@@ -34,25 +34,23 @@ public sealed class Creature
 }
 public sealed class Sensors
 {
-    public const int InputCount = 22;
+    public const int InputCount = 30;
     public const int SprayLeft = 19, SprayRight = 20, SprayContact = 21;
-    public static readonly string[] Names = ["Cursor left", "Cursor right", "Edge left", "Edge right", "Edge front", "Speed", "Moving", "Novelty", "Quiet time", "Heading sin", "Heading cos"];
+    public static readonly string[] Names = ["Vision left", "Vision right", "Boundary touch L", "Boundary touch R", "Boundary touch F", "Speed", "Moving", "Visual change", "Visual quiet", "Heading sin", "Heading cos"];
     public double[] Values { get; } = new double[InputCount];
-    private Vec? previousCursor;
-    private double quiet; private Vec? previousForApproach;
-    public void Sample(Creature c, Habitat world, Vec cursor, double dt, IReadOnlyList<Sugar> sugar, bool held, double touch, double reward, IReadOnlyList<SprayCloud>? spray = null)
+    private double quiet;
+    public void Sample(Creature c, Habitat world, double dt, IReadOnlyList<Sugar> sugar, bool held, double touch, double reward, IReadOnlyList<SprayCloud>? spray = null, VisualSignals vision = default)
     {
-        var offset = cursor - c.Position;
-        var relative = Math.Atan2(offset.Y, offset.X) - c.Heading;
-        var proximity = Math.Exp(-offset.Length / 280);
-        var novelty = previousCursor is { } last ? Math.Clamp((cursor - last).Length / (dt * 1000), 0, 1) * proximity : 0;
-        previousCursor = cursor;
+        var left = vision.Available ? vision.Left : default;
+        var right = vision.Available ? vision.Right : default;
+        double novelty = Math.Max(left.Change, right.Change);
         quiet = novelty > .08 ? 0 : quiet + dt;
-        Values[0] = proximity * (.5 - .5 * Math.Sin(relative));
-        Values[1] = proximity * (.5 + .5 * Math.Sin(relative));
-        Values[2] = world.Edge(c.Position, c.Heading - .65);
-        Values[3] = world.Edge(c.Position, c.Heading + .65);
-        Values[4] = world.Edge(c.Position, c.Heading);
+        Values[0] = left.Activity;
+        Values[1] = right.Activity;
+        // Explicit short-range virtual feelers, not invisible visual rangefinders.
+        Values[2] = world.Contains(c.Position + Vec.Direction(c.Heading - .65) * 12) ? 0 : 1;
+        Values[3] = world.Contains(c.Position + Vec.Direction(c.Heading + .65) * 12) ? 0 : 1;
+        Values[4] = world.Contains(c.Position + Vec.Direction(c.Heading) * 12) ? 0 : 1;
         Values[5] = Math.Clamp(c.Velocity.Length / 150, 0, 1);
         Values[6] = 1 - Math.Exp(-c.Velocity.Length / 15);
         Values[7] = novelty;
@@ -65,11 +63,13 @@ public sealed class Sensors
         Values[13] = sugar.Any(s => (s.Position - c.Position).Length < 24) ? 1 : 0;
         Values[14] = touch;
         Values[15] = held ? 1 : 0;
-        Values[16] = novelty;
+        Values[16] = Math.Clamp((left.Clockwise + left.CounterClockwise + right.Clockwise + right.CounterClockwise) / 2, 0, 1);
         Values[17] = reward;
-        var cursorVelocity = previousForApproach is { } prior ? (cursor - prior) * (1 / dt) : new Vec();
-        Values[18] = Math.Clamp(-(cursorVelocity.X * offset.X + cursorVelocity.Y * offset.Y) / Math.Max(1, offset.Length) / 600, 0, 1) * proximity;
-        previousForApproach = cursor;
+        Values[18] = 0; // Reserved for future pixel-derived looming; no cursor-velocity shortcut.
+        Values[22] = left.Clockwise; Values[23] = left.CounterClockwise;
+        Values[24] = right.Clockwise; Values[25] = right.CounterClockwise;
+        Values[26] = left.Luminance; Values[27] = right.Luminance;
+        Values[28] = left.Contrast; Values[29] = right.Contrast;
         double Irritant(Vec p) => Math.Clamp(spray?.Sum(cloud => cloud.Sample(p)) ?? 0, 0, 1);
         Values[SprayLeft] = Irritant(c.Position + Vec.Direction(c.Heading - .7) * 20);
         Values[SprayRight] = Irritant(c.Position + Vec.Direction(c.Heading + .7) * 20);
@@ -83,8 +83,8 @@ public readonly record struct MotorActivity(double Forward, double Turn, double 
 public sealed class Brain
 {
     public const int SprayLeft = 38, SprayRight = 39, SprayContact = 40, Punishment = 41, ApproachStart = 42, LearnedThreat = 46;
-    public const int PopulationCount = 47;
-    public string[] Names { get; } = [.. Sensors.Names, "Explore L", "Explore R", "Orient L", "Orient R", "Threat", "Forward", "Turn L", "Turn R", "Brake", "Food L", "Food R", "Taste", "Touch", "Held", "Motion", "Ingestion", "Looming", "KC cursor L", "KC cursor R", "KC food L", "KC food R", "Avoid cursor L", "Avoid cursor R", "Avoid food L", "Avoid food R", "PAM-like reward", "Feed", "Spray L", "Spray R", "Spray contact", "PPL1-like aversion", "Approach cursor L", "Approach cursor R", "Approach food L", "Approach food R", "Learned threat"];
+    public const int VisualStart = 47, PopulationCount = 55;
+    public string[] Names { get; } = [.. Sensors.Names, "Explore L", "Explore R", "Orient L", "Orient R", "Threat", "Forward", "Turn L", "Turn R", "Brake", "Food odor L", "Food odor R", "Taste", "Touch", "Held", "Visual motion", "Ingestion", "Loom (unused)", "KC vision L", "KC vision R", "KC odor L", "KC odor R", "Avoid vision L", "Avoid vision R", "Avoid odor L", "Avoid odor R", "PAM-like reward", "Feed", "Spray L", "Spray R", "Spray contact", "PPL1-like aversion", "Approach vision L", "Approach vision R", "Approach odor L", "Approach odor R", "Learned threat", "L motion CW", "L motion CCW", "R motion CW", "R motion CCW", "L luminance", "R luminance", "L contrast", "R contrast"];
     public double[] Activity { get; } = new double[PopulationCount];
     public double[] Drives { get; } = [.6, 0, .3, 0, .5, 0];
     public static readonly string[] DriveNames = ["Curiosity", "Fatigue", "Arousal", "Startle", "Attraction", "Habituation"];
@@ -102,15 +102,18 @@ public sealed class Brain
         get => threatSettings;
         set { ArgumentNullException.ThrowIfNull(value); value.Validate(); threatSettings = value; }
     }
-    public LearnedState ExportLearning() => new(2, (double[])Plasticity.Weights.Clone(), (double[])Plasticity.ApproachWeights.Clone());
+    public LearnedState ExportLearning() => new(3, (double[])Plasticity.Weights.Clone(), (double[])Plasticity.ApproachWeights.Clone());
     public void ImportLearning(LearnedState state)
     {
         static bool Valid(double[]? weights) => weights is { Length: 4 } && weights.All(w => double.IsFinite(w) && w >= .05 && w <= 1);
         ArgumentNullException.ThrowIfNull(state);
-        if (state.Version is not (1 or 2) || !Valid(state.Weights) || (state.Version == 2 && !Valid(state.ApproachWeights))) throw new ArgumentException("Invalid learned state");
+        if (state.Version is not (1 or 2 or 3) || !Valid(state.Weights) || (state.Version >= 2 && !Valid(state.ApproachWeights))) throw new ArgumentException("Invalid learned state");
         state.Weights.CopyTo(Plasticity.Weights, 0);
-        if (state.Version == 2) state.ApproachWeights!.CopyTo(Plasticity.ApproachWeights, 0);
+        if (state.Version >= 2) state.ApproachWeights!.CopyTo(Plasticity.ApproachWeights, 0);
         else Array.Fill(Plasticity.ApproachWeights, 1);
+        // Old cursor-coordinate features are not equivalent to general pixel features.
+        if (state.Version < 3)
+            for (int k = 0; k < 2; k++) Plasticity.Weights[k] = Plasticity.ApproachWeights[k] = 1;
         UpdatePlasticConnections();
     }
     public Brain(int seed = 7, IPlasticity? plasticity = null)
@@ -143,6 +146,8 @@ public sealed class Brain
         Link(SprayLeft,18,7); Link(SprayRight,17,7);
         Link(SprayLeft,Punishment,.35); Link(SprayRight,Punishment,.35); Link(SprayContact,Punishment,.8);
         Link(LearnedThreat,15,5);
+        Link(47,18,2); Link(48,17,2); Link(49,18,2); Link(50,17,2);
+        Link(51,11,.3); Link(52,12,.3); Link(53,13,1); Link(54,14,1);
         Activity[11] = .15; Activity[12] = .08;
     }
     private void UpdatePlasticConnections()
@@ -170,6 +175,7 @@ public sealed class Brain
         for (int i = 0; i < 11; i++) next[i] = Ease(Activity[i], Math.Clamp(senses[i] * (i < 2 ? sensoryGain * (1 - .25 * Drives[5]) : 1), 0, 1), .07 / (1 + Threat.AcuteArousal));
         for (int i = 11; i < PopulationCount; i++)
         {
+            if (i >= VisualStart) { next[i] = Ease(Activity[i], senses[22+i-VisualStart], .05); continue; }
             if(i >= 20 && i < 28) { next[i] = Ease(Activity[i], senses[i-9], .07); continue; }
             if (i >= SprayLeft && i <= SprayContact)
             {
@@ -247,22 +253,23 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
         Spray.Add(new(position));
     }
     public MotorActivity Motor { get; private set; }
-    public void Step(Vec cursor)
+    public void Step(VisualSignals vision = default, double dt = Dt)
     {
-        Sensors.Sample(Creature, Habitat, cursor, Dt, Sugar, Held, Touch, reward, Spray);
-        Motor = Brain.Step(Sensors.Values, Dt);
-        if (!Held) MotorSystem.Step(Creature, Motor, Habitat, Dt);
+        if (!double.IsFinite(dt) || dt <= 0 || dt > 1.0 / 60) throw new ArgumentOutOfRangeException(nameof(dt));
+        Sensors.Sample(Creature, Habitat, dt, Sugar, Held, Touch, reward, Spray, vision);
+        Motor = Brain.Step(Sensors.Values, dt);
+        if (!Held) MotorSystem.Step(Creature, Motor, Habitat, dt);
         reward = 0;
         foreach(var food in Sugar)
         {
             if((food.Position - Creature.Position).Length >= 24) continue;
-            double eaten = Math.Min(food.Amount, Brain.Activity[37] * Dt * .7);
-            food.Amount -= eaten; Consumed += eaten; reward += eaten / Dt;
+            double eaten = Math.Min(food.Amount, Brain.Activity[37] * dt * .7);
+            food.Amount -= eaten; Consumed += eaten; reward += eaten / dt;
         }
         reward = Math.Clamp(reward, 0, 1);
         Sugar.RemoveAll(s => s.Amount <= 0);
-        Touch *= Math.Exp(-Dt / .2);
-        foreach (var cloud in Spray) cloud.Tick(Dt);
+        Touch *= Math.Exp(-dt / .2);
+        foreach (var cloud in Spray) cloud.Tick(dt);
         Spray.RemoveAll(cloud => cloud.Concentration < .005);
     }
 }

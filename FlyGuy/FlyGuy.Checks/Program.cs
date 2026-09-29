@@ -5,15 +5,15 @@ var world=new Habitat([new(0,0,1920,1080)]);
 var sim=new Simulation(world);
 var timer=Stopwatch.StartNew();
 var initial=sim.Creature.Position;
-for(int i=0;i<120*300;i++) sim.Step(new(100,100));
+for(int i=0;i<120*300;i++) sim.Step();
 Check(world.Contains(sim.Creature.Position) && sim.Brain.Activity.All(v=>double.IsFinite(v)&&v>=0&&v<=1),"Five-minute closed-loop stability");
 Check((initial-sim.Creature.Position).Length>10,"Neural motor output moves body");
 Console.WriteLine($"300 simulated seconds in {timer.Elapsed.TotalSeconds:F3}s; working set {Environment.WorkingSet/1048576} MB");
 sim.Held=true; sim.DropSugar(sim.Creature.Position);
-for(int i=0;i<120;i++) sim.Step(sim.Creature.Position);
+for(int i=0;i<120;i++) sim.Step();
 Check(sim.Consumed>0 && sim.Brain.Dopamine>.01,"Contact feeding evokes reward while held");
 var position=sim.Creature.Position;
-for(int i=0;i<120;i++) sim.Step(new(0,0));
+for(int i=0;i<120;i++) sim.Step();
 Check(sim.Creature.Position==position,"Grab constrains physics while brain runs");
 var paired=new Brain(); var unpaired=new Brain();
 for(int trial=0;trial<12;trial++)
@@ -36,7 +36,7 @@ var restored=new Brain(); restored.ImportLearning(paired.ExportLearning());
 Check(restored.Plasticity.Weights.SequenceEqual(paired.Plasticity.Weights),"Versioned learned-state round trip");
 sim.ResetBrain(); Check(sim.Brain.Plasticity.Weights.All(w=>w==1) && sim.Brain.Dopamine==0,"Brain reset");
 var sense=new Sensors(); var creature=new Creature {Position=new(500,500)};
-sense.Sample(creature,world,new(0,0),Simulation.Dt,[new(new(1000,1000))],false,0,0);
+sense.Sample(creature,world,Simulation.Dt,[new(new(1000,1000))],false,0,0);
 Check(sense.Values[11]==0 && sense.Values[12]==0 && sense.Values[13]==0,"Distant sugar is not sensed");
 
 var habituated=new Brain(); var cue=new double[Sensors.InputCount]; cue[0]=1;
@@ -50,7 +50,7 @@ for(int seed=1;seed<=5;seed++)
     for(int i=0;i<120*180;i++)
     {
         if(i%(120*10)==0) experiment.DropSugar(experiment.Creature.Position+new Vec(30,10));
-        experiment.Step(new(800+300*Math.Sin(i*.001),400));
+        experiment.Step();
     }
     Check(experiment.Brain.Activity.All(double.IsFinite) && world.Contains(experiment.Creature.Position),$"Food/cursor stability seed {seed}");
 }
