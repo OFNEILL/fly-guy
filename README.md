@@ -1,6 +1,8 @@
 # Fly Guy
 
-A Windows desktop creature driven by a small recurrent neural simulation. **Milestone one uses synthetic weights, not real fly-connectome connectivity.** The research and the staged plan for replacing them are in [docs/RESEARCH.md](docs/RESEARCH.md).
+A desktop creature driven by a small recurrent neural simulation, with a Windows frontend and an initial macOS frontend. **Milestone one uses synthetic weights, not real fly-connectome connectivity.** The research and the staged plan for replacing them are in [docs/RESEARCH.md](docs/RESEARCH.md).
+
+For macOS 14+ (Apple Silicon or Intel), see the [Mac build and installation instructions](packaging/macos/README.md), including current feature differences and validation limits. The instructions below describe the Windows frontend.
 
 ## Run
 
