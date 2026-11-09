@@ -1,0 +1,47 @@
+name: macOS build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'FlyGuy/FlyGuy.Core/**'
+      - 'FlyGuy/FlyGuy.Mac/**'
+      - 'tests/FlyGuy.Checks/**'
+      - 'packaging/macos/**'
+      - '.github/workflows/macos.yml'
+  pull_request:
+    paths:
+      - 'FlyGuy/FlyGuy.Core/**'
+      - 'FlyGuy/FlyGuy.Mac/**'
+      - 'tests/FlyGuy.Checks/**'
+      - 'packaging/macos/**'
+      - '.github/workflows/macos.yml'
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-15
+          - rid: osx-x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check shared simulation
+        run: dotnet run --project tests/FlyGuy.Checks -c Release
+      - name: Build app bundle and zip
+        run: bash packaging/macos/build.sh '${{ matrix.rid }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FlyGuy-${{ matrix.rid }}
+          path: |
+            artifacts/macos/FlyGuy-*-${{ matrix.rid }}.zip
+            artifacts/macos/FlyGuy-*-${{ matrix.rid }}.zip.sha256
+          if-no-files-found: error

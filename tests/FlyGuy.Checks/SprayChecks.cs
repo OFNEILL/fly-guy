@@ -41,9 +41,9 @@ internal static class SprayChecks
         var habitat = new Habitat([new(0,0,1920,1080)]);
         var local = new Simulation(habitat) { Held = true };
         var far = new Simulation(habitat) { Held = true };
-        Vec cursor = new(0,0), start = local.Creature.Position;
+        Vec start = local.Creature.Position;
         local.SprayAt(start); far.SprayAt(new(20,20));
-        for (int i = 0; i < 120; i++) { local.Step(cursor); far.Step(cursor); }
+        for (int i = 0; i < 120; i++) { local.Step(); far.Step(); }
         Check(local.Sensors.Values[Sensors.SprayContact] > .4 && far.Sensors.Values[Sensors.SprayContact] == 0,
             "Spray is a local concentration field");
         Check(local.Brain.Threat.AcuteArousal > .7 && local.Brain.Threat.Stress > .1 && local.Brain.Threat.Aversion > .7,
@@ -51,7 +51,7 @@ internal static class SprayChecks
         Check(local.Creature.Position == start && local.Creature.Velocity == default,
             "Spray does not bypass held-body physics");
         Check(far.Brain.Threat.Aversion == 0 && far.Brain.Threat.Stress == 0, "Distant spray produces no punishment");
-        for (int i = 0; i < 120 * 10; i++) local.Step(cursor);
+        for (int i = 0; i < 120 * 10; i++) local.Step();
         Check(local.Spray.Count == 0 && local.Sensors.Values[Sensors.SprayContact] == 0, "Clouds decay and expire");
 
         var brain = new Brain();
@@ -139,7 +139,7 @@ internal static class SprayChecks
                     sim.SprayAt(sim.Creature.Position); replay.SprayAt(replay.Creature.Position);
                     sim.DropSugar(sim.Creature.Position); replay.DropSugar(replay.Creature.Position);
                 }
-                sim.Step(new(700,400)); replay.Step(new(700,400));
+                sim.Step(); replay.Step();
                 CheckFinite(sim);
                 if (sim.Creature.Position != replay.Creature.Position) throw new Exception("Spray replay diverged");
             }

@@ -1,5 +1,7 @@
 # Fly Spray: mechanisms and experiments
 
+The [two-eye vision update](VISION.md) replaces the original cursor-coordinate features with generic left/right pixel-derived visual activity. Cursor-specific recognition is not supplied. Learned-state exports now use version 3; old cursor features reset on import, while odor memory is retained. The experiments below describe controlled sensory-cue conditioning and remain applicable to the new generic visual input channels.
+
 Fly Spray is a fictional nonlethal irritant, not a simulation of commercial insecticide poisoning. The brain receives local receptor readings, never spray coordinates or a requested escape direction. All connections and numerical kinetics below are synthetic population-level approximations.
 
 ## Biological basis

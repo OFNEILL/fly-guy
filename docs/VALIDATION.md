@@ -2,6 +2,12 @@
 
 Environment: Windows x64, .NET SDK 10.0.401.
 
+## Two-eye vision update — 29 September 2026
+
+- Release solution build passes. Pixel-based geometry, static/moving stimuli, directional motion, gap validity, exact debugger-to-input correspondence, nonvisual separation, three-seed motor responses and 60/120/240 Hz brain stability checks pass alongside spray and baseline checks.
+- `tests/Smoke-VisionDesktop.ps1` verifies live capture, all five viewer modes, geometry/rate editing, pause/resume, viewer reopen and clean shutdown. With render target 8 Hz, brain activity stayed approximately 120 ticks/s.
+- See [vision design and measured experiments](VISION.md). Mixed-DPI and visual alignment checks remain manual.
+
 ## Fly Spray update — 29 September 2026
 
 - `dotnet build FlyGuy/FlyGuy.slnx -c Release`: passed with zero warnings/errors.
