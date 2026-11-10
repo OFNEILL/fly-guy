@@ -211,6 +211,9 @@ internal sealed class Inspector : Window
     private readonly BrainView graph;
     private readonly VisionRuntime vision;
     private FlyVisionWindow? visionWindow;
+    private readonly RelayConnection messaging = new();
+    private readonly SpeechBubbleWindow speechBubble;
+    private MessagingWindow? messagingWindow;
     private readonly System.Windows.Threading.DispatcherTimer updateTimer = new(System.Windows.Threading.DispatcherPriority.Normal) { Interval=TimeSpan.FromMilliseconds(4) };
     private readonly TextBlock status = new() { Margin = new Thickness(10), Foreground = Brushes.LightGray };
     private double last, accumulator, sampled, topology, rateTime, lastRender;
@@ -272,6 +275,18 @@ internal sealed class Inspector : Window
             else { if (visionWindow.WindowState==WindowState.Minimized) visionWindow.WindowState=WindowState.Normal; visionWindow.Activate(); }
         };
         buttons.Children.Add(flyVision);
+        var messages = new System.Windows.Controls.Button { Content="Fly messages", Margin=new Thickness(8,0,0,0), Padding=new Thickness(8,3,8,3) };
+        messages.Click += (_,_) =>
+        {
+            if (messagingWindow is null)
+            {
+                messagingWindow = new(messaging) { Owner = this };
+                messagingWindow.Closed += (_,_) => messagingWindow = null;
+                messagingWindow.Show();
+            }
+            else { messagingWindow.WindowState = WindowState.Normal; messagingWindow.Activate(); }
+        };
+        buttons.Children.Add(messages);
         var help=new TextBlock { Text="Select Sugar, Fly Spray or Cigarette, then apply and move the cursor within 3 seconds. Ctrl+Shift+Space applies the selected tool immediately; Ctrl+Shift+S = sugar, Ctrl+Shift+F = spray, Ctrl+Shift+C = cigarette. Escape cancels a countdown. Tools pause with the simulation. Give cigarette supplies an immediate puff. Nearby cigarettes allow autonomous use. Grab the fly with left mouse.", Foreground=Brushes.LightGray, Margin=new Thickness(10), TextWrapping=TextWrapping.Wrap };
         DockPanel.SetDock(help,Dock.Top); root.Children.Add(help);
         DockPanel.SetDock(buttons,Dock.Top); root.Children.Add(buttons);
@@ -303,6 +318,11 @@ internal sealed class Inspector : Window
         DockPanel.SetDock(status,Dock.Bottom); root.Children.Add(status);
         root.Children.Add(new ScrollViewer { Content=graph, HorizontalScrollBarVisibility=ScrollBarVisibility.Auto, VerticalScrollBarVisibility=ScrollBarVisibility.Auto });
         overlay = new Overlay(simulation);
+        speechBubble = new();
+        messaging.MessageReceived += message => speechBubble.Speak(message.Text, simulation.Creature, simulation.Habitat);
+        messaging.StatusChanged += () => { if (messaging.Settings is not { Enabled: true }) speechBubble.Hide(); };
+        Loaded += (_,_) => messaging.Start();
+        Closed += (_,_) => { messaging.Dispose(); messagingWindow?.Close(); speechBubble.Close(); };
         updateTimer.Tick += Update;
         Loaded += (_,_) => { overlay.Show(); last=clock.Elapsed.TotalSeconds; updateTimer.Start(); CompositionTarget.Rendering += Render; };
         Closed += (_,_) => { updateTimer.Stop(); vision.Dispose(); CompositionTarget.Rendering -= Render; visionWindow?.Close(); overlay.Close(); foreach(var window in sugarWindows) window.Close(); foreach(var window in sprayWindows) window.Close(); foreach(var window in cigaretteWindows) window.Close(); };
@@ -384,6 +404,7 @@ internal sealed class Inspector : Window
             if (!simulation.Cigarettes.Contains(window.Cigarette)) { window.Close(); cigaretteWindows.Remove(window); }
             else window.Draw();
         overlay.Draw(simulation.Creature,simulation.Held,simulation.SmokingCigarette is not null); frames++;
+        speechBubble.Follow(simulation.Creature, simulation.Habitat);
         visionWindow?.Refresh(now);
         vision.RenderMeter.Record(Stopwatch.GetElapsedTime(began).TotalSeconds);
     }

@@ -16,7 +16,7 @@ Install the .NET 10 SDK on Windows, then from this directory:
 dotnet run --project FlyGuy/FlyGuy.Desktop
 ```
 
-The creature appears in a transparent, topmost window. Move the cursor within its visual fields to stimulate its eyes, or grab it with the left mouse button. Select Sugar, Fly Spray or Cigarette in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, Ctrl+Shift+C drops a cigarette, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. Nearby desktop pixels are processed in memory; no screenshots are saved or uploaded. No global hooks, OCR, network access or startup registration.
+The creature appears in a transparent, topmost window. Move the cursor within its visual fields to stimulate its eyes, or grab it with the left mouse button. Select Sugar, Fly Spray or Cigarette in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, Ctrl+Shift+C drops a cigarette, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. Nearby desktop pixels are processed in memory; no screenshots are saved or uploaded. No global hooks, OCR or startup registration. Optional fly messaging connects only to the relay you configure; see [messaging setup](docs/MESSAGING.md).
 
 ```powershell
 dotnet run --project tests/FlyGuy.Checks -c Release
