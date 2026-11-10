@@ -37,6 +37,7 @@ internal static class Native
 internal sealed class CreatureView : FrameworkElement
 {
     public Creature? Creature { get; set; }
+    public bool Smoking { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
         if (Creature is not { } c) return;
@@ -57,6 +58,12 @@ internal sealed class CreatureView : FrameworkElement
         dc.DrawEllipse(Brushes.White, null, new(66,53), 4,4);
         dc.DrawEllipse(Brushes.Black, null, new(68,43), 2,2);
         dc.DrawEllipse(Brushes.Black, null, new(68,53), 2,2);
+        if (Smoking)
+        {
+            dc.DrawLine(new Pen(Brushes.WhiteSmoke, 4), new(72,48), new(86,48));
+            dc.DrawEllipse(Brushes.OrangeRed, null, new(87,48), 3,3);
+            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(90,200,200,200)), null, new(86,36), 5,7);
+        }
         dc.Pop();
     }
 }
@@ -105,7 +112,7 @@ internal sealed class Overlay : Window
             });
         };
     }
-    public void Draw(Creature creature, bool held)
+    public void Draw(Creature creature, bool held, bool smoking = false)
     {
         var dpi = VisualTreeHelper.GetDpi(this);
         Native.SetWindowPos(handle, new nint(-1), (int)(creature.Position.X - 48 * dpi.DpiScaleX), (int)(creature.Position.Y - 48 * dpi.DpiScaleY), 0, 0, 0x0011);
@@ -114,6 +121,7 @@ internal sealed class Overlay : Window
         int style=Native.GetWindowLong(handle,-20);
         int desired=interactive ? style & ~0x20 : style | 0x20;
         if(style!=desired) Native.SetWindowLong(handle,-20,desired);
+        view.Smoking = smoking;
         view.InvalidateVisual();
     }
 }
@@ -150,6 +158,9 @@ internal sealed class BrainView(Simulation simulation, WorkMeter? paintMeter = n
             dc.DrawEllipse(new SolidColorBrush(Color.FromRgb((byte)(35+value*50),(byte)(65+value*180),(byte)(80+value*150))), new Pen(Brushes.SlateGray,1),p,9+value*4,9+value*4);
             Text(dc, $"{b.Names[i]} {value:F2}",p.X-65,p.Y+13,10);
         }
+        var nicotine = b.Nicotine;
+        Text(dc,$"CIGARETTE (fictional units): cortisol {nicotine.Cortisol:F1} / epinephrine {nicotine.Epinephrine:F1} / norepinephrine {nicotine.Norepinephrine:F1}",18,1310,13,Brushes.Orange);
+        Text(dc,$"Nicotine {nicotine.Nicotine:F2}   Dependence {nicotine.Dependence:F2}   Tolerance {nicotine.Tolerance:F2}   Craving {nicotine.Craving:F2}   Withdrawal {nicotine.Withdrawal:F2}   Puffs {nicotine.Puffs}   Cooldown {nicotine.Cooldown:F1}s",18,1337,12);
         Text(dc,"Internal drives (0-1)",18,420,14);
         for (int i = 0; i < 6; i++)
         {
@@ -204,16 +215,17 @@ internal sealed class Inspector : Window
     private readonly TextBlock status = new() { Margin = new Thickness(10), Foreground = Brushes.LightGray };
     private double last, accumulator, sampled, topology, rateTime, lastRender;
     private int frames, ticks;
-    private bool paused, sugarKey, sprayKey, toolKey;
+    private bool paused, sugarKey, sprayKey, cigaretteKey, toolKey;
     private double dropAt = double.PositiveInfinity;
     private int pendingTool;
     private readonly System.Windows.Controls.ComboBox tool = new()
     {
-        Width = 95, Margin = new Thickness(8,0,0,0), SelectedIndex = 0,
-        Items = { new ComboBoxItem { Content = "Sugar" }, new ComboBoxItem { Content = "Fly Spray" } }
+        Width = 110, Margin = new Thickness(8,0,0,0), SelectedIndex = 0,
+        Items = { new ComboBoxItem { Content = "Sugar" }, new ComboBoxItem { Content = "Fly Spray" }, new ComboBoxItem { Content = "Cigarette" } }
     };
     private readonly List<SprayWindow> sprayWindows = [];
     private readonly List<SugarWindow> sugarWindows = [];
+    private readonly List<CigaretteWindow> cigaretteWindows = [];
     private Vec lastHeldPosition;
     public Inspector()
     {
@@ -224,13 +236,26 @@ internal sealed class Inspector : Window
         Height = Math.Min(1000, SystemParameters.WorkArea.Height);
         Background = new SolidColorBrush(Color.FromRgb(19,25,35));
         var root = new DockPanel(); Content = root;
-        graph = new BrainView(simulation,vision.BrainPaintMeter) { Width=1480,Height=1310 };
-        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin=new Thickness(10) };
+        graph = new BrainView(simulation,vision.BrainPaintMeter) { Width=1480,Height=1400 };
+        var buttons = new WrapPanel { Margin=new Thickness(10) };
         var pause = new System.Windows.Controls.Button { Content="Pause / resume", Padding=new Thickness(12,5,12,5) };
         pause.Click += (_,_) => paused=!paused;
         var exit = new System.Windows.Controls.Button { Content="Exit creature", Margin=new Thickness(10,0,0,0), Padding=new Thickness(12,5,12,5) };
         exit.Click += (_,_) => Close(); buttons.Children.Add(pause); buttons.Children.Add(exit);
         buttons.Children.Add(tool);
+        var smoke = new System.Windows.Controls.Button { Content="Give cigarette", Margin=new Thickness(8,0,0,0) };
+        smoke.Click += (_,_) =>
+        {
+            if (paused) return;
+            if (simulation.SmokingCigarette is null && !simulation.Cigarettes.Any(c => (c.Position-simulation.Creature.Position).Length < 24))
+                simulation.DropCigarette(simulation.Creature.Position);
+            simulation.SmokeCigarette();
+        };
+        buttons.Children.Add(smoke);
+        var autonomous = new System.Windows.Controls.CheckBox { Content="Autonomous smoking", IsChecked=true, Foreground=Brushes.LightGray, Margin=new Thickness(8,0,0,0), VerticalAlignment=VerticalAlignment.Center };
+        autonomous.Checked += (_,_) => simulation.AutonomousSmoking=true;
+        autonomous.Unchecked += (_,_) => simulation.AutonomousSmoking=false;
+        buttons.Children.Add(autonomous);
         var drop=new System.Windows.Controls.Button { Content="Apply at cursor in 3s", Margin=new Thickness(8,0,0,0) };
         drop.Click+=(_,_)=> { pendingTool=tool.SelectedIndex; dropAt=clock.Elapsed.TotalSeconds+3; }; buttons.Children.Add(drop);
         var reset=new System.Windows.Controls.Button { Content="Reset brain", Margin=new Thickness(8,0,0,0) };
@@ -247,7 +272,7 @@ internal sealed class Inspector : Window
             else { if (visionWindow.WindowState==WindowState.Minimized) visionWindow.WindowState=WindowState.Normal; visionWindow.Activate(); }
         };
         buttons.Children.Add(flyVision);
-        var help=new TextBlock { Text="Select Sugar or Fly Spray, then apply and move the cursor within 3 seconds. Ctrl+Shift+Space applies the selected tool immediately; Ctrl+Shift+S = sugar, Ctrl+Shift+F = spray. Escape cancels a countdown. Tools pause with the simulation. Grab the fly with left mouse.", Foreground=Brushes.LightGray, Margin=new Thickness(10), TextWrapping=TextWrapping.Wrap };
+        var help=new TextBlock { Text="Select Sugar, Fly Spray or Cigarette, then apply and move the cursor within 3 seconds. Ctrl+Shift+Space applies the selected tool immediately; Ctrl+Shift+S = sugar, Ctrl+Shift+F = spray, Ctrl+Shift+C = cigarette. Escape cancels a countdown. Tools pause with the simulation. Give cigarette supplies an immediate puff. Nearby cigarettes allow autonomous use. Grab the fly with left mouse.", Foreground=Brushes.LightGray, Margin=new Thickness(10), TextWrapping=TextWrapping.Wrap };
         DockPanel.SetDock(help,Dock.Top); root.Children.Add(help);
         DockPanel.SetDock(buttons,Dock.Top); root.Children.Add(buttons);
         var settingsPanel = new WrapPanel { Margin = new Thickness(10,0,10,6) };
@@ -280,7 +305,7 @@ internal sealed class Inspector : Window
         overlay = new Overlay(simulation);
         updateTimer.Tick += Update;
         Loaded += (_,_) => { overlay.Show(); last=clock.Elapsed.TotalSeconds; updateTimer.Start(); CompositionTarget.Rendering += Render; };
-        Closed += (_,_) => { updateTimer.Stop(); vision.Dispose(); CompositionTarget.Rendering -= Render; visionWindow?.Close(); overlay.Close(); foreach(var window in sugarWindows) window.Close(); foreach(var window in sprayWindows) window.Close(); };
+        Closed += (_,_) => { updateTimer.Stop(); vision.Dispose(); CompositionTarget.Rendering -= Render; visionWindow?.Close(); overlay.Close(); foreach(var window in sugarWindows) window.Close(); foreach(var window in sprayWindows) window.Close(); foreach(var window in cigaretteWindows) window.Close(); };
     }
     private void Update(object? sender, EventArgs args)
     {
@@ -291,6 +316,7 @@ internal sealed class Inspector : Window
             bool modifiers=Native.GetAsyncKeyState(0x11)<0 && Native.GetAsyncKeyState(0x10)<0;
             bool key=modifiers && Native.GetAsyncKeyState(0x53)<0;
             bool spray=modifiers && Native.GetAsyncKeyState(0x46)<0;
+            bool cigarette=modifiers && Native.GetAsyncKeyState(0x43)<0;
             bool selected=modifiers && Native.GetAsyncKeyState(0x20)<0;
             if (Native.GetAsyncKeyState(0x1B)<0 || paused) dropAt=double.PositiveInfinity;
             if (!paused)
@@ -298,14 +324,15 @@ internal sealed class Inspector : Window
                 Vec position = new(inputCursor.X,inputCursor.Y);
                 if (key && !sugarKey) simulation.DropSugar(position);
                 if (spray && !sprayKey) simulation.SprayAt(position);
+                if (cigarette && !cigaretteKey) simulation.DropCigarette(position);
                 if ((selected && !toolKey) || now>=dropAt)
                 {
                     int chosen = now>=dropAt ? pendingTool : tool.SelectedIndex;
-                    if (chosen == 1) simulation.SprayAt(position); else simulation.DropSugar(position);
+                    if (chosen == 1) simulation.SprayAt(position); else if (chosen == 2) simulation.DropCigarette(position); else simulation.DropSugar(position);
                     dropAt=double.PositiveInfinity;
                 }
             }
-            sugarKey=key; sprayKey=spray; toolKey=selected;
+            sugarKey=key; sprayKey=spray; cigaretteKey=cigarette; toolKey=selected;
         }
         if(simulation.Held)
         {
@@ -330,7 +357,7 @@ internal sealed class Inspector : Window
         if(now-sampled>=.1) { if(!paused) graph.Sample(); sampled=now; }
         if(now-rateTime>=1)
         {
-            status.Text=$"{(paused ? "PAUSED" : "LIVE")}   {frames/(now-rateTime):F0} render FPS   {ticks/(now-rateTime):F0} ticks/s   speed {simulation.Creature.Velocity.Length:F1} px/s   {(double.IsFinite(dropAt) ? $"{(pendingTool == 1 ? "SPRAY" : "SUGAR")} in {Math.Max(0,dropAt-now):F1}s" : $"Spray clouds: {simulation.Spray.Count}")}\n{vision.Status}";
+            status.Text=$"{(paused ? "PAUSED" : "LIVE")}   {frames/(now-rateTime):F0} render FPS   {ticks/(now-rateTime):F0} ticks/s   speed {simulation.Creature.Velocity.Length:F1} px/s   {(double.IsFinite(dropAt) ? $"{(pendingTool == 1 ? "SPRAY" : pendingTool == 2 ? "CIGARETTE" : "SUGAR")} in {Math.Max(0,dropAt-now):F1}s" : $"Spray clouds: {simulation.Spray.Count}")}\n{vision.Status}";
             frames=ticks=0; rateTime=now;
         }
     }
@@ -351,10 +378,13 @@ internal sealed class Inspector : Window
         foreach (var window in sprayWindows.ToArray())
             if (!simulation.Spray.Contains(window.Cloud)) { window.Close(); sprayWindows.Remove(window); }
             else window.Draw();
-        overlay.Draw(simulation.Creature,simulation.Held); frames++;
+        foreach (var cigarette in simulation.Cigarettes)
+            if (!cigaretteWindows.Any(w=>ReferenceEquals(w.Cigarette,cigarette))) { var window=new CigaretteWindow(cigarette); cigaretteWindows.Add(window); window.Show(); }
+        foreach (var window in cigaretteWindows.ToArray())
+            if (!simulation.Cigarettes.Contains(window.Cigarette)) { window.Close(); cigaretteWindows.Remove(window); }
+            else window.Draw();
+        overlay.Draw(simulation.Creature,simulation.Held,simulation.SmokingCigarette is not null); frames++;
         visionWindow?.Refresh(now);
         vision.RenderMeter.Record(Stopwatch.GetElapsedTime(began).TotalSeconds);
     }
 }
-
-
