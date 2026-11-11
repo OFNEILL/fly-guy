@@ -65,7 +65,7 @@ internal sealed class Inspector : Window
     private bool paused, visionEnabled;
     private double last, accumulator, nextVision, lastVision, nextReport, nextHabitat;
     private double toolAt;
-    private bool sprayPending;
+    private int pendingTool;
 
     public Inspector()
     {
@@ -84,14 +84,25 @@ internal sealed class Inspector : Window
         }
         Button? pause = null;
         pause = Add("Pause", () => { paused = !paused; pause!.Content = paused ? "Resume" : "Pause"; toolAt = 0; });
-        Add("Sugar in 3s", () => Schedule(false));
-        Add("Spray in 3s", () => Schedule(true));
+        Add("Sugar in 3s", () => Schedule(0));
+        Add("Spray in 3s", () => Schedule(1));
+        Add("Cigarette in 3s", () => Schedule(2));
+        Add("Give cigarette", () =>
+        {
+            if (paused) return;
+            if (simulation.SmokingCigarette is null && !simulation.Cigarettes.Any(c => (c.Position - simulation.Creature.Position).Length < 24))
+                simulation.DropCigarette(simulation.Creature.Position);
+            simulation.SmokeCigarette();
+        });
         Add("Cancel", () => toolAt = 0);
         Add("Reset brain", simulation.ResetBrain);
         Add("Bring fly here", () => simulation.Creature.Position = simulation.Habitat.Constrain(Native.Cursor));
         Add("Exit", Close);
         panel.Children.Add(buttons);
         panel.Children.Add(countdown);
+        var autonomous = new CheckBox { Content="Autonomous smoking", IsChecked=true };
+        autonomous.IsCheckedChanged += (_,_) => simulation.AutonomousSmoking = autonomous.IsChecked == true;
+        panel.Children.Add(autonomous);
         var vision = new CheckBox { Content = "Enable desktop vision (requires Screen Recording permission)" };
         vision.IsCheckedChanged += (_, _) =>
         {
@@ -112,10 +123,10 @@ internal sealed class Inspector : Window
         Closed += (_, _) => { timer.Stop(); capture.Dispose(); overlay.Close(); };
         timer.Tick += (_, _) => Tick();
     }
-    private void Schedule(bool spray)
+    private void Schedule(int tool)
     {
         if (paused) return;
-        sprayPending = spray; toolAt = clock.Elapsed.TotalSeconds + 3;
+        pendingTool = tool; toolAt = clock.Elapsed.TotalSeconds + 3;
     }
     private void Tick()
     {
@@ -141,10 +152,10 @@ internal sealed class Inspector : Window
         }
         if (toolAt > 0 && now >= toolAt)
         {
-            if (sprayPending) simulation.SprayAt(Native.Cursor); else simulation.DropSugar(Native.Cursor);
+            if (pendingTool == 1) simulation.SprayAt(Native.Cursor); else if (pendingTool == 2) simulation.DropCigarette(Native.Cursor); else simulation.DropSugar(Native.Cursor);
             toolAt = 0;
         }
-        countdown.Text = toolAt > 0 ? $"Move the cursor: {(sprayPending ? "spray" : "sugar")} in {Math.Ceiling(toolAt - now)}…" : "";
+        countdown.Text = toolAt > 0 ? $"Move the cursor: {(pendingTool == 1 ? "spray" : pendingTool == 2 ? "cigarette" : "sugar")} in {Math.Ceiling(toolAt - now)}…" : "";
         if (!paused)
         {
             accumulator += elapsed;
@@ -159,7 +170,9 @@ internal sealed class Inspector : Window
         metrics.Text = $"Hunger {b.Hunger:F2}   Energy {b.Energy:F2}   Reward {b.Dopamine:F3}   Eaten {simulation.Consumed:F2}\n" +
             $"Aversion {b.Threat.Aversion:F3}   Arousal {b.Threat.AcuteArousal:F3}   Stress {b.Threat.Stress:F3}\n" +
             $"Thrust {simulation.Motor.Forward:F2}   Turn {simulation.Motor.Turn:F2}   Brake {simulation.Motor.Brake:F2}\n" +
-            $"Sugar sources {simulation.Sugar.Count}   Spray clouds {simulation.Spray.Count}\n" +
+            $"Sugar sources {simulation.Sugar.Count}   Spray clouds {simulation.Spray.Count}   Cigarettes {simulation.Cigarettes.Count}\n" +
+            $"Fictional chemistry: Cortisol {b.Nicotine.Cortisol:F1}   Epinephrine {b.Nicotine.Epinephrine:F1}   Norepinephrine {b.Nicotine.Norepinephrine:F1}\n" +
+            $"Dependence {b.Nicotine.Dependence:F2}   Tolerance {b.Nicotine.Tolerance:F2}   Craving {b.Nicotine.Craving:F2}   Withdrawal {b.Nicotine.Withdrawal:F2}   Puffs {b.Nicotine.Puffs}\n" +
             $"Avoidance weights: {string.Join("  ", b.Plasticity.Weights.Select(w => w.ToString("F3")))}\n" +
             $"Approach weights: {string.Join("  ", b.Plasticity.ApproachWeights.Select(w => w.ToString("F3")))}";
         populations.Text = string.Join("\n", b.Names.Select((name, i) => $"{name,-22} {b.Activity[i]:F3}"));

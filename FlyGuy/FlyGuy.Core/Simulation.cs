@@ -34,12 +34,12 @@ public sealed class Creature
 }
 public sealed class Sensors
 {
-    public const int InputCount = 30;
+    public const int InputCount = 32;
     public const int SprayLeft = 19, SprayRight = 20, SprayContact = 21;
     public static readonly string[] Names = ["Vision left", "Vision right", "Boundary touch L", "Boundary touch R", "Boundary touch F", "Speed", "Moving", "Visual change", "Visual quiet", "Heading sin", "Heading cos"];
     public double[] Values { get; } = new double[InputCount];
     private double quiet;
-    public void Sample(Creature c, Habitat world, double dt, IReadOnlyList<Sugar> sugar, bool held, double touch, double reward, IReadOnlyList<SprayCloud>? spray = null, VisualSignals vision = default)
+    public void Sample(Creature c, Habitat world, double dt, IReadOnlyList<Sugar> sugar, bool held, double touch, double reward, IReadOnlyList<SprayCloud>? spray = null, VisualSignals vision = default, IReadOnlyList<Cigarette>? cigarettes = null)
     {
         var left = vision.Available ? vision.Left : default;
         var right = vision.Available ? vision.Right : default;
@@ -74,6 +74,10 @@ public sealed class Sensors
         Values[SprayLeft] = Irritant(c.Position + Vec.Direction(c.Heading - .7) * 20);
         Values[SprayRight] = Irritant(c.Position + Vec.Direction(c.Heading + .7) * 20);
         Values[SprayContact] = Irritant(c.Position);
+        double Tobacco(Vec p) => Math.Clamp(cigarettes?.Where(c => c.PuffsRemaining > 0).Sum(c =>
+            (c.Position - p).Length < 180 ? Math.Exp(-(c.Position - p).Length / 60) : 0) ?? 0, 0, 1);
+        Values[30] = Tobacco(c.Position + Vec.Direction(c.Heading - .7) * 20);
+        Values[31] = Tobacco(c.Position + Vec.Direction(c.Heading + .7) * 20);
     }
 }
 public readonly record struct Synapse(int From, int To, double Weight);
@@ -96,6 +100,7 @@ public sealed class Brain
     public double Energy { get; private set; } = .7;
     public double Dopamine { get; private set; }
     public ThreatModulation Threat { get; } = new();
+    public NicotineState Nicotine { get; } = new();
     private ThreatSettings threatSettings = new();
     public ThreatSettings ThreatSettings
     {
@@ -171,7 +176,8 @@ public sealed class Brain
         Drives[3] = Ease(Drives[3], Math.Max(senses[7], senses[4]), .6);
         Drives[4] = Ease(Drives[4], 1 - Drives[5], 8);
         Drives[5] = Ease(Drives[5], Math.Clamp(senses[0] + senses[1], 0, 1), 12);
-        double sensoryGain = 1 + .5 * Threat.AcuteArousal + .35 * Threat.Stress;
+        double stimulant = Math.Clamp((Nicotine.Epinephrine + Nicotine.Norepinephrine) / 40, 0, 1);
+        double sensoryGain = 1 + .5 * Threat.AcuteArousal + .35 * Threat.Stress + stimulant;
         for (int i = 0; i < 11; i++) next[i] = Ease(Activity[i], Math.Clamp(senses[i] * (i < 2 ? sensoryGain * (1 - .25 * Drives[5]) : 1), 0, 1), .07 / (1 + Threat.AcuteArousal));
         for (int i = 11; i < PopulationCount; i++)
         {
@@ -193,6 +199,13 @@ public sealed class Brain
             if (i == 16) current += 2 + Drives[0] - Drives[1] * 3;
             if (i == 19) current += Drives[1] * 2;
             if (i is 13 or 14) current += Hunger * .8;
+            if (i == 13) current += senses[30] * Nicotine.Craving * 8;
+            if (i == 14) current += senses[31] * Nicotine.Craving * 8;
+            if (i == 17) current += senses[30] * Nicotine.Craving * 5;
+            if (i == 18) current += senses[31] * Nicotine.Craving * 5;
+            if (i == 16) current += stimulant * 3 + Nicotine.Withdrawal;
+            if (i == 15) current += Math.Clamp(Nicotine.Cortisol / 20, 0, 1) * 2 + Nicotine.Withdrawal;
+            if (i == 19) current -= stimulant * 2;
             if (i == 16) current += Energy - .7;
             if (i >= 28 && i < 32) { next[i] = Ease(Activity[i], Math.Max(0, synapticCurrent - .04), .1); continue; }
             if (i >= 32 && i < 36) { next[i] = synapticCurrent; continue; }
@@ -210,7 +223,7 @@ public sealed class Brain
         Array.Copy(next, Activity, PopulationCount);
         Hunger = Math.Clamp(Hunger + dt * (.002 - senses[17] * .65), 0, 1);
         Energy = Math.Clamp(Energy + dt * (senses[17] * .8 - .0008 - senses[5] * .002), 0, 1);
-        Dopamine = Ease(Dopamine, Activity[36], .7);
+        Dopamine = Ease(Dopamine, Math.Clamp(Activity[36] + Nicotine.Reward, 0, 1), .7);
         Threat.Tick(Activity[Punishment], Activity[LearnedThreat], ThreatSettings, dt);
         Plasticity.Tick([Activity[28], Activity[29], Activity[30], Activity[31]], Dopamine, Threat.Aversion, Threat.Stress, dt);
         UpdatePlasticConnections();
@@ -240,12 +253,32 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
     public Brain Brain { get; private set; } = new(seed);
     public List<Sugar> Sugar { get; } = [];
     public List<SprayCloud> Spray { get; } = [];
+    public List<Cigarette> Cigarettes { get; } = [];
+    public Cigarette? SmokingCigarette { get; private set; }
+    public bool AutonomousSmoking { get; set; } = true;
+    private double smokingIntent;
     public bool Held { get; set; }
     public double Touch { get; set; }
     private double reward;
     public double Consumed { get; private set; }
-    public void ResetBrain() { Brain = new(seed) { ThreatSettings = Brain.ThreatSettings }; reward = 0; }
+    public void ResetBrain() { Brain = new(seed) { ThreatSettings = Brain.ThreatSettings }; reward = 0; smokingIntent = 0; }
     public void DropSugar(Vec position) { if(Sugar.Count < 64) Sugar.Add(new(Habitat.Constrain(position))); }
+    public void DropCigarette(Vec position)
+    {
+        if (!double.IsFinite(position.X) || !double.IsFinite(position.Y) || !Habitat.Contains(position)) return;
+        if (Cigarettes.Count < 64) Cigarettes.Add(new(position));
+    }
+    public bool SmokeCigarette()
+    {
+        var cigarette = SmokingCigarette ?? Cigarettes.FirstOrDefault(c => c.PuffsRemaining > 0 && (c.Position - Creature.Position).Length < 24);
+        if (cigarette is null || !Brain.Nicotine.TryPuff()) return false;
+        cigarette.TakePuff();
+        Cigarettes.Remove(cigarette);
+        SmokingCigarette = cigarette.PuffsRemaining > 0 ? cigarette : null;
+        smokingIntent = 0;
+        Cigarettes.RemoveAll(c => c.PuffsRemaining <= 0);
+        return true;
+    }
     public void SprayAt(Vec position)
     {
         if (!double.IsFinite(position.X) || !double.IsFinite(position.Y) || !Habitat.Contains(position)) return;
@@ -256,7 +289,19 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
     public void Step(VisualSignals vision = default, double dt = Dt)
     {
         if (!double.IsFinite(dt) || dt <= 0 || dt > 1.0 / 60) throw new ArgumentOutOfRangeException(nameof(dt));
-        Sensors.Sample(Creature, Habitat, dt, Sugar, Held, Touch, reward, Spray, vision);
+        Brain.Nicotine.Tick(dt);
+        SmokingCigarette?.Tick(dt);
+        if (SmokingCigarette?.PuffsRemaining <= 0) SmokingCigarette = null;
+        foreach (var cigarette in Cigarettes) cigarette.Tick(dt);
+        Cigarettes.RemoveAll(c => c.PuffsRemaining <= 0);
+        bool contact = SmokingCigarette is not null || Cigarettes.Any(c => c.PuffsRemaining > 0 && (c.Position - Creature.Position).Length < 24);
+        if (AutonomousSmoking && !Held && contact)
+        {
+            smokingIntent += dt * Brain.Nicotine.Craving;
+            if (smokingIntent >= .08) SmokeCigarette();
+        }
+        else smokingIntent = 0;
+        Sensors.Sample(Creature, Habitat, dt, Sugar, Held, Touch, reward, Spray, vision, AutonomousSmoking && SmokingCigarette is null ? Cigarettes : null);
         Motor = Brain.Step(Sensors.Values, dt);
         if (!Held) MotorSystem.Step(Creature, Motor, Habitat, dt);
         reward = 0;
@@ -273,5 +318,3 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
         Spray.RemoveAll(cloud => cloud.Concentration < .005);
     }
 }
-
-

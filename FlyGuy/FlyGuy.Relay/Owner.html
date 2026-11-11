@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Fly Guy · Message desk</title>
+<style>
+:root{font:16px system-ui;color:#eef2ed;background:#111a19;color-scheme:dark}*{box-sizing:border-box}body{margin:0}main{max-width:820px;margin:7vh auto;padding:24px}small,.muted{color:#aebdb6}h1{font-size:clamp(32px,6vw,52px);letter-spacing:-2px;margin:12px 0}p{line-height:1.6}.card{background:#1b2926;border:1px solid #34473f;border-radius:18px;padding:24px;margin-top:24px}label{display:block;margin:18px 0 8px}input,select,textarea,button{font:inherit;border-radius:8px;padding:12px}input,select,textarea{width:100%;border:1px solid #547062;background:#101d18;color:inherit}textarea{resize:vertical;min-height:140px}button{background:#c0ef8a;color:#152412;border:0;cursor:pointer;margin-top:16px;font-weight:650}button.secondary{background:#34473f;color:#eef2ed;margin-left:8px}button:disabled{opacity:.5;cursor:wait}.row{display:flex;justify-content:space-between;align-items:center;gap:12px}#status{min-height:28px;white-space:pre-wrap}footer{margin-top:28px;font-size:14px}[hidden]{display:none!important}
+</style>
+<main>
+<small>FLY GUY / OWNER TOOLS</small>
+<h1>A little message, delivered.</h1>
+<p class="muted">Send a speech bubble to a connected fly. Recipients enable remote messages in their app and can disconnect whenever they want.</p>
+<section class="card" id="login">
+<form id="signin"><label for="key">Owner key</label><input id="key" type="password" required minlength="32" maxlength="256" autocomplete="off"><button>Unlock message desk</button></form>
+<p class="muted">Your key stays in memory for this page session. Reloading or signing out clears it.</p>
+</section>
+<section class="card" id="desk" hidden>
+<div class="row"><strong>Message desk</strong><button id="logout" class="secondary">Sign out</button></div>
+<form id="compose"><label for="recipient">Recipient</label><select id="recipient" required></select>
+<p id="presence" class="muted"></p>
+<label for="message">What should the fly say?</label><textarea id="message" required maxlength="500" placeholder="Write a message…"></textarea>
+<div class="row"><small id="count">0 / 500</small><button id="send">Send as the fly</button></div></form>
+<button id="refresh" class="secondary">Refresh recipients</button>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+<footer class="muted">Online recipients usually receive messages within a few seconds. Offline messages queue for up to 24 hours. The recipient app needs internet access and must be running. This page uses the relay serving it.</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let key='', users=[], timer, generation=0;
+function signout(){generation++;key='';clearInterval(timer);$('key').value='';$('message').value='';$('count').textContent='0 / 500';$('recipient').replaceChildren();users=[];$('desk').hidden=true;$('login').hidden=false;}
+async function api(path,body){const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(10000),cache:'no-store'});if(!response.ok){if(response.status===401){signout();throw Error('Access denied. Check your owner key.');}let error;try{error=(await response.json()).error;}catch{}throw Error(error||'Request failed ('+response.status+').');}return response.json();}
+function presence(){const user=users.find(u=>u.id===$('recipient').value);$('presence').textContent=user?`${user.online?'Online':'Offline'} · ${user.pendingMessages} queued message(s)`:'No recipients yet. Enable receiving in a recipient app.';$('send').disabled=!user;}
+async function refresh(){const current=generation;const result=await api('/api/admin/users');if(current!==generation)return;users=result;const selected=$('recipient').value;$('recipient').replaceChildren(...users.map(user=>{const option=document.createElement('option');option.value=user.id;option.textContent=`${user.displayName} · ${user.id.slice(0,8)} · ${user.online?'online':'offline'}`;return option;}));if(users.some(u=>u.id===selected))$('recipient').value=selected;presence();}
+$('signin').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;key=$('key').value.trim();try{await refresh();$('key').value='';$('login').hidden=true;$('desk').hidden=false;$('status').textContent='Connected. Recipients refresh every 10 seconds.';timer=setInterval(()=>refresh().catch(error=>$('status').textContent=error.message),10000);}catch(error){key='';$('status').textContent=error.message;}finally{button.disabled=false;}};
+$('logout').onclick=()=>{signout();$('status').textContent='Signed out.';};
+$('recipient').onchange=presence;
+$('message').oninput=()=>$('count').textContent=$('message').value.length+' / 500';
+$('refresh').onclick=()=>refresh().catch(error=>$('status').textContent=error.message);
+$('compose').onsubmit=async event=>{event.preventDefault();const text=$('message').value.trim();if(!text)return;const current=generation;$('send').disabled=true;try{await api('/api/admin/messages',{userId:$('recipient').value,text});if(current!==generation)return;$('message').value='';$('count').textContent='0 / 500';$('status').textContent='Message queued. This confirms acceptance, not that it has been read.';await refresh();}catch(error){$('status').textContent=error.message+' If delivery is uncertain, refresh before retrying.';}finally{presence();}};
+</script>
+</html>

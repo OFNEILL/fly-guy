@@ -16,7 +16,7 @@ Install the .NET 10 SDK on Windows, then from this directory:
 dotnet run --project FlyGuy/FlyGuy.Desktop
 ```
 
-The creature appears in a transparent, topmost window. Move the cursor within its visual fields to stimulate its eyes, or grab it with the left mouse button. Select Sugar or Fly Spray in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. Nearby desktop pixels are processed in memory; no screenshots are saved or uploaded. No global hooks, OCR, network access or startup registration.
+The creature appears in a transparent, topmost window. Move the cursor within its visual fields to stimulate its eyes, or grab it with the left mouse button. Select Sugar, Fly Spray or Cigarette in the inspector and apply it at the cursor after a three-second countdown. Ctrl+Shift+S drops sugar, Ctrl+Shift+F sprays, Ctrl+Shift+C drops a cigarette, and Ctrl+Shift+Space applies the selected tool. Escape cancels a countdown. Minimize the inspector to observe the desktop; restore it from the taskbar. Pause/resume and Exit are in the inspector. Closing the inspector exits the entire application. Nearby desktop pixels are processed in memory; no screenshots are saved or uploaded. No global hooks, OCR or startup registration. Optional fly messaging connects only to the relay you configure; see [messaging setup](docs/MESSAGING.md).
 
 ```powershell
 dotnet run --project tests/FlyGuy.Checks -c Release
@@ -24,6 +24,12 @@ dotnet publish FlyGuy/FlyGuy.Desktop -c Release -r win-x64 --self-contained fals
 ```
 
 Published output requires the .NET 10 Windows Desktop Runtime.
+
+## Cigarettes
+
+Drop a cigarette using the tool selector, or click **Give cigarette** for a puff at the fly's position. **Autonomous smoking** is enabled by default: the fly senses local tobacco cues, steers toward them through its neural motor circuit and can try smoking without being prompted. Disable the checkbox to stop autonomous seeking/use. Held flies only smoke when given a puff manually.
+
+Each cigarette provides up to eight puffs with an eight-second cooldown. The first puff removes it from the desktop and transfers it to the fly. The fly can keep puffing on the carried cigarette; it disappears when depleted or after 60 simulated seconds. Windows shows the carried cigarette beside the fly while it is lit. Unlit cigarettes wait until used; pausing also pauses burning. Each puff produces very large **fictional** cortisol, epinephrine and norepinephrine spikes (initially 20/24/24 relative units, capped at 40), plus nicotine and a reward signal. These affect arousal, sensory gain, locomotor activity and learning. Dependence builds quickly (35% of the remaining capacity per puff). Nicotine wears off with a 10-second decay time, bringing stronger withdrawal and craving that reinforce seeking. Dependence recovers slowly with a 30-minute decay time; repeated use also builds tolerance. Dependence and tolerance gradually recover during abstinence. The inspector shows the chemistry and addiction state; **Reset brain** clears them. This is a gameplay model, not a claim about fly endocrinology. Addiction state is session-local and is not included in exported learning weights.
 
 ## How it works
 

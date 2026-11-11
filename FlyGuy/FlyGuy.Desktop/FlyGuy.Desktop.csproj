@@ -10,5 +10,5 @@
     <!-- WPF owns application startup; Forms is used only for monitor enumeration. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../FlyGuy.Core/FlyGuy.Core.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../FlyGuy.Core/FlyGuy.Core.csproj" /><ProjectReference Include="../FlyGuy.Messaging/FlyGuy.Messaging.csproj" /></ItemGroup>
 </Project>

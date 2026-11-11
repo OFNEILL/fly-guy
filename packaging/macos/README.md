@@ -21,7 +21,8 @@ Packages are ad-hoc signed, not Developer ID signed or notarized. Downloaded cop
 ## Use
 
 - Drag the fly to reposition it. Pause/resume, reset brain and exit are in the inspector. Closing the inspector closes the app and overlay.
-- Click **Sugar in 3s** or **Spray in 3s**, then move the cursor to the target. **Cancel** or Escape while the inspector has focus cancels the countdown. Tools are disabled while paused.
+- Click **Sugar in 3s**, **Spray in 3s** or **Cigarette in 3s**, then move the cursor to the target. **Cancel** or Escape while the inspector has focus cancels the countdown. Tools are disabled while paused.
+- **Give cigarette** supplies an immediate puff. **Autonomous smoking** allows local tobacco seeking/use. Chemistry, dependence, craving and withdrawal appear in the metrics; reset clears them. See the root README for the fictional model and recovery behavior.
 - Enable desktop vision in the inspector. Grant Screen Recording access in System Settings if prompted, then restart if macOS requests it. Without permission the simulation continues with unavailable visual input.
 - ScreenCaptureKit captures a 600-point square around the fly, including the cursor and excluding this application's windows. Pixels stay in memory. Retina images are resampled to desktop points so vision, cursor position and physics use the same coordinates.
 
