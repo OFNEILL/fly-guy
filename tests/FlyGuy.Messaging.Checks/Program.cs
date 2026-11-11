@@ -43,20 +43,24 @@ try
     try { RelayClient.ValidateAddress("http://example.com"); throw new Exception("Remote HTTP accepted"); }
     catch (ArgumentException) { Check(true, "remote clients require HTTPS"); }
 
-    string adminKey = Secret(), invitation = Secret();
+    string adminKey = Secret();
     await using var app = RelayApplication.Build([
         "--urls", "http://127.0.0.1:0", "--FLYGUY_ADMIN_KEY", adminKey,
-        "--FLYGUY_INVITE_KEY", invitation, "--FLYGUY_DATA_PATH", Path.Combine(directory, "http.json"),
+        "--FLYGUY_DATA_PATH", Path.Combine(directory, "http.json"),
         "--Logging:LogLevel:Default", "None"]);
     await app.StartAsync();
     string address = app.Urls.Single();
+    using (var browser = new HttpClient())
+    {
+        var page = await browser.GetStringAsync(address + "/");
+        Check(page.Contains("Message desk") && !page.Contains(adminKey),
+            "browser desk is served without embedding relay secrets");
+    }
     using var admin = new RelayClient(address, adminKey);
-    using var join = new RelayClient(address, invitation);
+    using var join = new RelayClient(address, "");
     using var invalid = new RelayClient(address, Secret());
     await Rejected(() => invalid.Users(), HttpStatusCode.Unauthorized);
     await Rejected(() => join.Users(), HttpStatusCode.Unauthorized);
-    await Rejected(() => invalid.Join("Uninvited"), HttpStatusCode.Unauthorized);
-    await Rejected(() => admin.Join("Wrong key type"), HttpStatusCode.Unauthorized);
     var one = await join.Join("First fly"); var two = await join.Join("Second fly");
     using var first = new RelayClient(address, one.Token);
     using var second = new RelayClient(address, two.Token);

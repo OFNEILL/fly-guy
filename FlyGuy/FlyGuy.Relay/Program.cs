@@ -15,8 +15,7 @@ string RequiredKey(string name)
     if (key.Length is < 32 or > 256) throw new InvalidOperationException($"Set {name} to a random secret of 32-256 characters.");
     return key;
 }
-string adminKey = RequiredKey("FLYGUY_ADMIN_KEY"), invitation = RequiredKey("FLYGUY_INVITE_KEY");
-if (adminKey == invitation) throw new InvalidOperationException("Admin and invitation keys must be different.");
+string adminKey = RequiredKey("FLYGUY_ADMIN_KEY");
 if (string.IsNullOrEmpty(builder.Configuration["urls"])) builder.WebHost.UseUrls("http://127.0.0.1:5187");
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 8192);
 var store = new MessageStore(builder.Configuration["FLYGUY_DATA_PATH"] ?? Path.Combine(AppContext.BaseDirectory, "relay-state.json"));
@@ -43,8 +42,13 @@ string? Token(HttpContext context)
     return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? header[7..] : null;
 }
 app.MapGet("/health", () => Results.Ok(new { service = "Fly Guy relay" }));
-app.MapPost("/api/join", (HttpContext context, JoinRequest request) =>
-    MessageStore.Matches(Token(context), invitation) ? Results.Ok(store.Join(request.DisplayName)) : Results.Unauthorized());
+app.MapGet("/", () =>
+{
+    using var stream = typeof(RelayApplication).Assembly.GetManifestResourceStream("FlyGuy.Relay.Owner.html")!;
+    using var reader = new StreamReader(stream);
+    return Results.Content(reader.ReadToEnd(), "text/html; charset=utf-8");
+});
+app.MapPost("/api/join", (JoinRequest request) => Results.Ok(store.Join(request.DisplayName)));
 app.MapGet("/api/inbox", (HttpContext context) =>
 {
     if (store.Authenticate(Token(context)) is not Guid userId) return Results.Unauthorized();

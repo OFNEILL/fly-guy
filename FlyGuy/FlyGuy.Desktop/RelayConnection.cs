@@ -8,7 +8,7 @@ using FlyGuy.Messaging;
 namespace FlyGuy.Desktop;
 
 internal sealed record RelaySettings(string Address, string DisplayName, string ProtectedToken, bool Enabled, Guid? LastMessageId = null);
-internal sealed record LocalRelayKeys(string ProtectedAdminKey, string ProtectedInviteKey);
+internal sealed record LocalRelayKeys(string ProtectedAdminKey);
 
 internal sealed class RelayConnection : IDisposable
 {
@@ -36,18 +36,17 @@ internal sealed class RelayConnection : IDisposable
         File.Move(temporary, SettingsPath, true);
     }
     private void SetStatus(string message) { Status = message; StatusChanged?.Invoke(); }
-    public async Task Connect(string address, string displayName, string invitation)
+    public async Task Connect(string address, string displayName)
     {
         string normalized = RelayClient.ValidateAddress(address).AbsoluteUri;
-        if (invitation.Length > 0)
+        if (Settings is { } saved && saved.Address == normalized)
+            Settings = saved with { Enabled = true };
+        else
         {
-            using var join = new RelayClient(normalized, invitation);
+            using var join = new RelayClient(normalized, "");
             var identity = await join.Join(displayName);
             Settings = new(normalized, identity.DisplayName, Protect(identity.Token), true);
         }
-        else if (Settings is { } saved && saved.Address == normalized)
-            Settings = saved with { Enabled = true };
-        else throw new ArgumentException("Enter an invitation key to join this relay.");
         Save(); Start();
     }
     public void Start()
@@ -84,7 +83,7 @@ internal sealed class RelayConnection : IDisposable
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { break; }
                 catch (RelayException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                { SetStatus("Recipient key was rejected. Enter an invitation to reconnect."); break; }
+                { Settings = null; SetStatus("Recipient connection was rejected. Click Connect to register again."); break; }
                 catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or RelayException or JsonException)
                 { SetStatus("Relay unavailable; reconnecting automatically."); delaySeconds = 15; }
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellation.Token);
@@ -92,7 +91,7 @@ internal sealed class RelayConnection : IDisposable
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex) when (ex is ArgumentException or CryptographicException or FormatException or IOException or UnauthorizedAccessException)
-        { if (!cancellation.IsCancellationRequested) SetStatus("Messaging settings could not be opened. Reconnect with your invitation."); }
+        { if (!cancellation.IsCancellationRequested) { Settings = null; SetStatus("Messaging settings could not be opened. Click Connect to register again."); } }
         finally { cancellation.Dispose(); if (ReferenceEquals(receiving, cancellation)) receiving = null; }
     }
     public void Disconnect()

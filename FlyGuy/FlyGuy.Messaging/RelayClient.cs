@@ -35,7 +35,7 @@ public sealed class RelayClient : IDisposable
         {
             BaseAddress = ValidateAddress(address), Timeout = TimeSpan.FromSeconds(10)
         };
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (!string.IsNullOrEmpty(token)) http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     }
 
     private static async Task Check(HttpResponseMessage response, CancellationToken ct)

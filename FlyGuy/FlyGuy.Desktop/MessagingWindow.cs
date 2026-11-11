@@ -17,7 +17,6 @@ internal sealed class MessagingWindow : Window
     private readonly RelayConnection connection;
     private readonly TextBox server = new() { Text = "http://127.0.0.1:5187", Margin = new Thickness(0,4,0,10) };
     private readonly TextBox name = new() { Text = "Fly friend", MaxLength = 40, Margin = new Thickness(0,4,0,10) };
-    private readonly PasswordBox invitation = new() { Margin = new Thickness(0,4,0,10) };
     private readonly PasswordBox adminKey = new() { Margin = new Thickness(0,4,0,10) };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,10,0,10) };
     private readonly TextBlock adminStatus = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,10,0,10) };
@@ -33,7 +32,6 @@ internal sealed class MessagingWindow : Window
         Title = "Fly Guy - messages"; Width = 560; Height = 790; MinWidth = 440; MinHeight = 500;
         System.Windows.Automation.AutomationProperties.SetName(server, "Relay address");
         System.Windows.Automation.AutomationProperties.SetName(name, "Display name");
-        System.Windows.Automation.AutomationProperties.SetName(invitation, "Invitation key");
         System.Windows.Automation.AutomationProperties.SetName(adminKey, "Admin key");
         System.Windows.Automation.AutomationProperties.SetName(users, "Recipients");
         System.Windows.Automation.AutomationProperties.SetName(message, "Fly speech");
@@ -44,25 +42,18 @@ internal sealed class MessagingWindow : Window
         if (connection.Settings is { } settings) { server.Text = settings.Address; name.Text = settings.DisplayName; }
         var tabs = new TabControl();
         var receive = new StackPanel { Margin = new Thickness(12) };
-        receive.Children.Add(new TextBlock { Text = "Connect to let your fly receive speech bubbles. You can disconnect at any time.", TextWrapping = TextWrapping.Wrap });
+        receive.Children.Add(new TextBlock { Text = "Connect to receive speech bubbles written by the relay owner. You can disconnect at any time. No invitation key is needed.", TextWrapping = TextWrapping.Wrap });
         receive.Children.Add(new TextBlock { Text = "Your display name", Margin = new Thickness(0,12,0,0) }); receive.Children.Add(name);
-        receive.Children.Add(new TextBlock { Text = "Invitation key (leave blank to reconnect)" }); receive.Children.Add(invitation);
-        AddButton(receive, "Use local invitation", () => Run(async () =>
-        {
-            RequireLocalAddress();
-            var keys = RelayConnection.LocalKeys() ?? throw new ArgumentException("Start the local relay first using scripts/Start-Messaging.ps1.");
-            invitation.Password = RelayConnection.Unprotect(keys.ProtectedInviteKey); await Task.CompletedTask;
-        }, status));
         AddButton(receive, "Connect / receive messages", () => Run(async () =>
         {
-            await connection.Connect(server.Text, name.Text, invitation.Password); invitation.Clear();
+            await connection.Connect(server.Text, name.Text);
         }, status));
         AddButton(receive, "Disconnect", () => Run(() => { connection.Disconnect(); return Task.CompletedTask; }, status));
         receive.Children.Add(status);
         tabs.Items.Add(new TabItem { Header = "Receive messages", Content = receive });
         var control = new StackPanel { Margin = new Thickness(12) };
         control.Children.Add(new TextBlock { Text = "Admin access", FontSize = 19 });
-        control.Children.Add(new TextBlock { Text = "Only the owner key can list users and send messages. Invitation and recipient keys do not grant access.", TextWrapping = TextWrapping.Wrap });
+        control.Children.Add(new TextBlock { Text = "Only the owner key can list users and send messages. Registering as a recipient does not grant access.", TextWrapping = TextWrapping.Wrap });
         control.Children.Add(new TextBlock { Text = "Owner key" }); control.Children.Add(adminKey);
         AddButton(control, "Use local owner key", () => Run(async () =>
         {

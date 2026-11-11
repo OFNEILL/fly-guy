@@ -43,7 +43,7 @@ try {
     }
     if ($null -eq $messages) { throw 'Messaging panel did not open.' }
     Set-Control $messages 'Display name' 'Your fly'
-    Invoke-Control $messages 'Use local invitation'
+
     Invoke-Control $messages 'Connect / receive messages'
     Start-Sleep -Seconds 1
     (Find-Control $messages 'Admin').GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
@@ -70,7 +70,7 @@ try {
     if ($null -eq $bubble -or $bubble.Current.IsOffscreen) { throw 'Recipient did not show a speech bubble.' }
     $null = Find-Control $bubble $greeting
     Invoke-Control $messages 'Sign out'
-    Write-Output 'PASS: local invitation, opt-in connection, owner login, online recipient list, admin send, real speech bubble and sign-out.'
+    Write-Output 'PASS: invitation-free opt-in connection, owner login, online recipient list, admin send, real speech bubble and sign-out.'
     if ($KeepOpen) {
         Invoke-Control $messages 'Use local owner key'
         Invoke-Control $messages 'Sign in as admin'
