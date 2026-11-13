@@ -12,6 +12,7 @@ internal sealed class SpeechBubbleWindow : Window
     private readonly TextBlock words = new() { TextWrapping = TextWrapping.Wrap, FontSize = 16, Foreground = Brushes.DarkSlateGray, MaxHeight = 300 };
     private readonly System.Diagnostics.Stopwatch visibleFor = new();
     private nint handle;
+    private double durationSeconds = 12;
     public SpeechBubbleWindow()
     {
         Title = "Fly Guy speech bubble";
@@ -37,8 +38,9 @@ internal sealed class SpeechBubbleWindow : Window
             Native.SetWindowLong(handle, -20, Native.GetWindowLong(handle, -20) | 0x20 | 0x80 | 0x08000000);
         };
     }
-    public void Speak(string text, Creature fly, Habitat habitat)
+    public void Speak(string text, Creature fly, Habitat habitat, double durationSeconds = 12)
     {
+        this.durationSeconds = durationSeconds;
         words.Text = text;
         visibleFor.Restart();
         // Measure while hidden, position at the fly, then reveal without taking focus.
@@ -47,7 +49,7 @@ internal sealed class SpeechBubbleWindow : Window
     public void Follow(Creature fly, Habitat habitat)
     {
         if (!IsVisible) return;
-        if (visibleFor.Elapsed.TotalSeconds >= 12) { Hide(); return; }
+        if (visibleFor.Elapsed.TotalSeconds >= durationSeconds) { Hide(); return; }
         var dpi = VisualTreeHelper.GetDpi(this);
         double width = ActualWidth * dpi.DpiScaleX, height = ActualHeight * dpi.DpiScaleY;
         var region = habitat.Regions.FirstOrDefault(r => r.Contains(fly.Position));

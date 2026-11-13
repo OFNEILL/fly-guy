@@ -6,6 +6,8 @@ For macOS 14+ (Apple Silicon or Intel), see the [Mac build and installation inst
 
 ## Run
 
+Windows user releases now use the [Velopack installer and update feed](installer/README.md). Installed Release builds show compact fly controls without the neural laboratory. Automatic updates download from this repository's public stable GitHub Releases and install on the next launch. Debug builds show the laboratory; to inspect a Release build, launch `FlyGuy.Desktop.exe --dev`. Developer mode disables update checks. Pushes and merges to `main` build and publish stable Windows releases automatically, starting at `1.0.0` and incrementing the patch version thereafter. Local packaging does not publish.
+
 Open **Fly Vision** for two independently sampled desktop eyes, five live visualisation modes and configurable geometry/update rates. The brain receives processed pixel signals; it no longer receives cursor coordinates. See [vision design, research and checks](docs/VISION.md).
 
 Fly Spray adds local aversive receptors, separate reward/punishment learning, acute arousal and slowly recovering stress. See [mechanisms, sources and experiments](docs/SPRAY.md).
@@ -24,6 +26,30 @@ dotnet publish FlyGuy/FlyGuy.Desktop -c Release -r win-x64 --self-contained fals
 ```
 
 Published output requires the .NET 10 Windows Desktop Runtime.
+
+## Primitive speech
+
+The Windows fly speaks on its own in one-word bubbles: **hungry**, **food**, **yum**, **scared**, **ouch**, **sleep**, **stop**, **go**, or **buzz**. A smoothed readout of neural activity, hunger, energy, fatigue and threat selects its strongest sustained signal. Words appear for four seconds, with at least fourteen simulated seconds between utterances and forty-five seconds before repeating a word. Pausing also pauses speech decisions. Disable **Primitive speech** in the inspector to mute it; resetting the brain preserves that choice for the session.
+
+Speech runs locally and works offline. It is a fictional expression of the existing simulated state. Owner messages still take priority for their full twelve-second bubble. The shared core computes speech on both platforms; the current bubble display and mute control are Windows-only.
+
+**Speak aloud** is enabled by default and reads these self-generated words through the installed Windows voice, alongside their bubbles. It uses local speech synthesis, with no API key or network call. Turn off **Speak aloud** to keep just the bubbles. Pausing, muting primitive speech, or closing the app stops the voice. Owner-written messages retain their text bubbles and interrupt any current self-generated audio.
+
+## Talk and teach
+
+Windows desktop actions are available in **Talk to fly**. Autonomous actions are enabled by default; **Let the fly act on its own (this session)** lets you turn them off. Its simulated state chooses actions: a calm fly with curiosity above 0.35 may open Notepad once per session; arousal above 0.35 may move a cursor within 180 pixels of the fly by up to 160 pixels toward its screen centre. There is a 30-second startup delay and at least 60 seconds between attempts. Pause, holding the fly, and active owner-message priority suppress autonomous actions. Mouse buttons must be released before cursor movement. The toggle remains active when the panel closes and returns to enabled on app restart; reopen the panel to disable it. These are fixed state-based behaviours, not general computer control.
+
+For manual actions, enable **Enable desktop actions for this session**, then use the buttons or type **open notepad** / **move cursor away**. Manual actions have a five-second cooldown and require typed input; microphone recognition and learned replies cannot execute actions. The manual toggle resets when the panel closes. No files are edited and no clicks, keystrokes or shell commands are generated.
+
+On Windows, open **Talk to fly** and click **Start listening**. Speak a short phrase into the default microphone. The app uses an installed Windows speech recognizer locally and answers with a one-word bubble and, when **Speak aloud** is enabled, its voice. Recognition needs a Windows speech-recognition language and microphone access; the panel reports missing setup. You can also type into **Heard phrase** and click **Say this to the fly**.
+
+The fly learns simple associations, rather than using a conversational language model. An unfamiliar phrase is associated with its current brain state; familiar phrases recall learned replies, with word overlap used for similar phrases. Say **say apple** or **learn apple** to teach a new response word. To correct or teach a phrase, fill in **Heard phrase**, enter a one-word **Teach reply**, and click **Remember this reply**. Taught phrases and vocabulary are added to recognition hints when listening starts, including after explicit teaching.
+
+Words, phrase counts and response associations persist across restarts in `%LOCALAPPDATA%\FlyGuy\language-memory.dat`, encrypted for the current Windows account. Memory is bounded to 1,024 words and 512 phrases; low-frequency phrases are replaced when full. No microphone audio is saved or uploaded. **Clear learned words and phrases** clears the saved language memory. Resetting the simulated brain leaves this separate language memory intact.
+
+Listening is off until started, stops when the conversation panel closes or the fly is paused/muted, and filters out low-confidence recognition and speech occurring during the fly's own audio. Owner messages keep priority, and replies have a four-second cooldown. Headphones help avoid speaker feedback. This learning stores vocabulary and associations; it does not retrain Windows' acoustic recognition model or provide general language understanding.
+
+Windows conversation checks: `dotnet run --project tests/FlyGuy.Conversation.Checks -c Release`. These cover encrypted persistence, microphone startup, local recognition of synthesized audio, learned replies and synthesized response audio. The core checks also cover correction, generalization and memory limits.
 
 ## Cigarettes
 

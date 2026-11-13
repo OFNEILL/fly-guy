@@ -55,3 +55,5 @@ Console.WriteLine($"PASS: 10 simulated minutes; deterministic replay, finite act
 SprayChecks.RunAll();
 VisionChecks.RunAll();
 CigaretteChecks.RunAll();
+SpeechChecks.RunAll();
+LanguageChecks.RunAll();

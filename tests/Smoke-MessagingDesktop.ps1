@@ -8,8 +8,11 @@ Add-Type -AssemblyName UIAutomationTypes
 $flyApp = Start-Process -FilePath $DesktopPath -WindowStyle Hidden -PassThru
 $success = $false
 try {
-    Start-Sleep -Seconds 2
-    $flyApp.Refresh()
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        Start-Sleep -Milliseconds 250
+        $flyApp.Refresh()
+        if ($flyApp.HasExited -or $flyApp.MainWindowHandle -ne [IntPtr]::Zero) { break }
+    }
     if ($flyApp.HasExited) { throw 'Desktop exited during startup.' }
     $root = [System.Windows.Automation.AutomationElement]::FromHandle($flyApp.MainWindowHandle)
     function Find-Control($scope, [string]$name) {
@@ -42,41 +45,23 @@ try {
         if ($null -ne $messages) { break }
     }
     if ($null -eq $messages) { throw 'Messaging panel did not open.' }
-    Set-Control $messages 'Display name' 'Your fly'
-
-    Invoke-Control $messages 'Connect / receive messages'
-    Start-Sleep -Seconds 1
-    (Find-Control $messages 'Admin').GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
-    Invoke-Control $messages 'Use local owner key'
-    Invoke-Control $messages 'Sign in as admin'
-    Start-Sleep -Seconds 1
-    $recipients = Find-Control $messages 'Recipients'
-    $itemCondition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
-    $items = $recipients.FindAll([System.Windows.Automation.TreeScope]::Children, $itemCondition)
-    if ($items.Count -eq 0) { throw 'Connected recipient did not appear in admin roster.' }
-    $selected = $null
-    foreach ($item in $items) { if ($item.Current.Name -like 'Your fly*online*') { $selected = $item; break } }
-    if ($null -eq $selected) { throw 'Local recipient did not become online.' }
-    $selected.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
-    $greeting = "Hello! It's me, your fly."
-    Set-Control $messages 'Fly speech' $greeting
-    Invoke-Control $messages 'Send as the fly'
-    $bubble = $null
-    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+    $relayField = (Find-Control $messages 'Relay address').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    if (-not $relayField.Current.IsReadOnly -or $relayField.Current.Value -ne 'https://fly-guy-relay.vercel.app/') { throw 'Hosted relay must be fixed.' }
+    $nameField = (Find-Control $messages 'Display name').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $parsedAddress = $null
+    if (-not $nameField.Current.IsReadOnly -or -not [System.Net.IPAddress]::TryParse($nameField.Current.Value, [ref]$parsedAddress)) { throw 'Recipient name must be an IP address.' }
+    $connected = $false
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, "Connected as $($nameField.Current.Value). Waiting for fly messages.")
+        if ($null -ne $messages.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)) { $connected = $true; break }
         Start-Sleep -Milliseconds 250
-        $bubble = Find-Window 'Fly Guy speech bubble'
-        if ($null -ne $bubble -and -not $bubble.Current.IsOffscreen) { break }
     }
-    if ($null -eq $bubble -or $bubble.Current.IsOffscreen) { throw 'Recipient did not show a speech bubble.' }
-    $null = Find-Control $bubble $greeting
-    Invoke-Control $messages 'Sign out'
-    Write-Output 'PASS: invitation-free opt-in connection, owner login, online recipient list, admin send, real speech bubble and sign-out.'
-    if ($KeepOpen) {
-        Invoke-Control $messages 'Use local owner key'
-        Invoke-Control $messages 'Sign in as admin'
-        Write-Output "Updated Fly Guy is running with the admin panel open (PID $($flyApp.Id))."
-    }
+    if (-not $connected) { throw 'Recipient did not connect automatically. Check saved Disconnect preference and internet access.' }
+    Invoke-Control $messages 'Disconnect'
+    Invoke-Control $messages 'Connect / receive messages'
+    Write-Output 'PASS: fixed hosted relay, IP display name, automatic startup connection, disconnect and reconnect controls.'
     $success = $true
+
 }
 finally {
     if (-not $KeepOpen -or -not $success) {

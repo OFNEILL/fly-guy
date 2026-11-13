@@ -2,3 +2,8 @@
 **/obj/
 artifacts/
 .vs/
+**/node_modules/
+**/.vercel/
+**/.env
+**/.env.local
+hosting/vercel/public/

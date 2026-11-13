@@ -11,4 +11,8 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../FlyGuy.Core/FlyGuy.Core.csproj" /><ProjectReference Include="../FlyGuy.Messaging/FlyGuy.Messaging.csproj" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Speech" Version="10.0.0" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
 </Project>
