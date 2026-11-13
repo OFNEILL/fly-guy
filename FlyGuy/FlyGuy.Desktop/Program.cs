@@ -19,8 +19,13 @@ internal static class Program
     [STAThread]
     public static void Main()
     {
+        Velopack.VelopackApp.Build().Run();
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
-        var inspector = new Inspector();
+        bool developerMode = Environment.GetCommandLineArgs().Contains("--dev", StringComparer.OrdinalIgnoreCase);
+#if DEBUG
+        developerMode = true;
+#endif
+        var inspector = new Inspector(developerMode);
         app.Run(inspector);
     }
 }
@@ -208,15 +213,23 @@ internal sealed class Inspector : Window
     private readonly Simulation simulation = new(Native.ReadHabitat());
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly Overlay overlay;
-    private readonly BrainView graph;
+    private readonly BrainView? graph;
+    private readonly AppUpdates updates = new();
     private readonly VisionRuntime vision;
     private FlyVisionWindow? visionWindow;
     private readonly RelayConnection messaging = new();
     private readonly SpeechBubbleWindow speechBubble;
+    private readonly FlyVoice flyVoice = new();
+    private readonly FlyConversation conversation;
+    private ConversationWindow? conversationWindow;
+    private bool speakAloud = true;
+    private readonly System.Windows.Controls.CheckBox voiceToggle = new() { Content="Speak aloud", IsChecked=true, Foreground=Brushes.LightGray, Margin=new Thickness(8,0,0,0), VerticalAlignment=VerticalAlignment.Center, ToolTip="Read the fly's own words aloud using the local Windows voice." };
     private MessagingWindow? messagingWindow;
     private readonly System.Windows.Threading.DispatcherTimer updateTimer = new(System.Windows.Threading.DispatcherPriority.Normal) { Interval=TimeSpan.FromMilliseconds(4) };
     private readonly TextBlock status = new() { Margin = new Thickness(10), Foreground = Brushes.LightGray };
     private double last, accumulator, sampled, topology, rateTime, lastRender;
+    private double ownerSpeechUntil;
+    private double conversationSpeechUntil;
     private int frames, ticks;
     private bool paused, sugarKey, sprayKey, cigaretteKey, toolKey;
     private double dropAt = double.PositiveInfinity;
@@ -230,19 +243,20 @@ internal sealed class Inspector : Window
     private readonly List<SugarWindow> sugarWindows = [];
     private readonly List<CigaretteWindow> cigaretteWindows = [];
     private Vec lastHeldPosition;
-    public Inspector()
+    public Inspector(bool developerMode = false)
     {
         CaptureExclusion.Register(this);
         vision = new(clock);
-        Title = "Fly Guy - neural laboratory";
-        Width = Math.Min(1280, SystemParameters.WorkArea.Width);
-        Height = Math.Min(1000, SystemParameters.WorkArea.Height);
+        conversation = new(Dispatcher, () => simulation.Brain, SpeakReply, () => !paused && clock.Elapsed.TotalSeconds >= ownerSpeechUntil);
+        Title = developerMode ? "Fly Guy - neural laboratory" : "Fly Guy";
+        Width = Math.Min(developerMode ? 1280 : 620, SystemParameters.WorkArea.Width);
+        Height = Math.Min(developerMode ? 1000 : 420, SystemParameters.WorkArea.Height);
         Background = new SolidColorBrush(Color.FromRgb(19,25,35));
         var root = new DockPanel(); Content = root;
-        graph = new BrainView(simulation,vision.BrainPaintMeter) { Width=1480,Height=1400 };
+        if (developerMode) graph = new BrainView(simulation,vision.BrainPaintMeter) { Width=1480,Height=1400 };
         var buttons = new WrapPanel { Margin=new Thickness(10) };
         var pause = new System.Windows.Controls.Button { Content="Pause / resume", Padding=new Thickness(12,5,12,5) };
-        pause.Click += (_,_) => paused=!paused;
+        pause.Click += (_,_) => { paused=!paused; if (paused) { flyVoice.Stop(); conversation.StopListening(); } };
         var exit = new System.Windows.Controls.Button { Content="Exit creature", Margin=new Thickness(10,0,0,0), Padding=new Thickness(12,5,12,5) };
         exit.Click += (_,_) => Close(); buttons.Children.Add(pause); buttons.Children.Add(exit);
         buttons.Children.Add(tool);
@@ -259,10 +273,38 @@ internal sealed class Inspector : Window
         autonomous.Checked += (_,_) => simulation.AutonomousSmoking=true;
         autonomous.Unchecked += (_,_) => simulation.AutonomousSmoking=false;
         buttons.Children.Add(autonomous);
+        var talking = new System.Windows.Controls.CheckBox { Content="Primitive speech", IsChecked=true, Foreground=Brushes.LightGray, Margin=new Thickness(8,0,0,0), VerticalAlignment=VerticalAlignment.Center };
+        talking.Checked += (_,_) => simulation.Brain.Speech.Enabled=true;
+        talking.Unchecked += (_,_) =>
+        {
+            simulation.Brain.Speech.Enabled=false;
+            flyVoice.Stop();
+            conversation.StopListening();
+            simulation.Brain.Speech.TakeWord();
+            if (clock.Elapsed.TotalSeconds >= ownerSpeechUntil) speechBubble?.Hide();
+        };
+        buttons.Children.Add(talking);
+        var voice = voiceToggle;
+        voice.Checked += (_,_) => speakAloud=true;
+        voice.Unchecked += (_,_) => { speakAloud=false; flyVoice.Stop(); };
+        buttons.Children.Add(voice);
+        var talk = new System.Windows.Controls.Button { Content="Talk to fly", Margin=new Thickness(8,0,0,0), Padding=new Thickness(8,3,8,3) };
+        talk.Click += (_,_) =>
+        {
+            if (conversationWindow is null)
+            {
+                conversationWindow = new(conversation) { Owner = this };
+                conversationWindow.Closed += (_,_) => conversationWindow=null;
+                conversationWindow.Show();
+            }
+            else { conversationWindow.WindowState=WindowState.Normal; conversationWindow.Activate(); }
+        };
+        buttons.Children.Add(talk);
         var drop=new System.Windows.Controls.Button { Content="Apply at cursor in 3s", Margin=new Thickness(8,0,0,0) };
         drop.Click+=(_,_)=> { pendingTool=tool.SelectedIndex; dropAt=clock.Elapsed.TotalSeconds+3; }; buttons.Children.Add(drop);
         var reset=new System.Windows.Controls.Button { Content="Reset brain", Margin=new Thickness(8,0,0,0) };
-        reset.Click+=(_,_)=> { simulation.ResetBrain(); graph.ClearHistory(); }; buttons.Children.Add(reset);
+        reset.Click+=(_,_)=> { simulation.ResetBrain(); graph?.ClearHistory(); };
+        if (developerMode) buttons.Children.Add(reset);
         var flyVision = new System.Windows.Controls.Button { Content="Fly Vision", Margin=new Thickness(8,0,0,0), Padding=new Thickness(8,3,8,3) };
         flyVision.Click += (_,_) =>
         {
@@ -274,7 +316,7 @@ internal sealed class Inspector : Window
             }
             else { if (visionWindow.WindowState==WindowState.Minimized) visionWindow.WindowState=WindowState.Normal; visionWindow.Activate(); }
         };
-        buttons.Children.Add(flyVision);
+        if (developerMode) buttons.Children.Add(flyVision);
         var messages = new System.Windows.Controls.Button { Content="Fly messages", Margin=new Thickness(8,0,0,0), Padding=new Thickness(8,3,8,3) };
         messages.Click += (_,_) =>
         {
@@ -314,21 +356,34 @@ internal sealed class Inspector : Window
             settingsMessage.Text = "Rates applied.";
         };
         settingsPanel.Children.Add(apply); settingsPanel.Children.Add(settingsMessage);
-        DockPanel.SetDock(settingsPanel,Dock.Top); root.Children.Add(settingsPanel);
-        DockPanel.SetDock(status,Dock.Bottom); root.Children.Add(status);
-        root.Children.Add(new ScrollViewer { Content=graph, HorizontalScrollBarVisibility=ScrollBarVisibility.Auto, VerticalScrollBarVisibility=ScrollBarVisibility.Auto });
+        if (developerMode)
+        {
+            DockPanel.SetDock(settingsPanel,Dock.Top); root.Children.Add(settingsPanel);
+            DockPanel.SetDock(status,Dock.Bottom); root.Children.Add(status);
+            root.Children.Add(new ScrollViewer { Content=graph, HorizontalScrollBarVisibility=ScrollBarVisibility.Auto, VerticalScrollBarVisibility=ScrollBarVisibility.Auto });
+        }
+        var updateStatus = new TextBlock { TextWrapping=TextWrapping.Wrap, Foreground=Brushes.LightGray, Margin=new Thickness(10), Text=developerMode ? "Automatic updates are disabled in developer mode." : "Updates are checked automatically. Downloaded updates install on the next launch." };
+        updates.Changed += message => updateStatus.Text = message;
+        DockPanel.SetDock(updateStatus,Dock.Bottom); root.Children.Insert(0, updateStatus);
+        Loaded += (_,_) => { if (!developerMode) updates.Start(); };
+        Closed += (_,_) => updates.Dispose();
         overlay = new Overlay(simulation);
         speechBubble = new();
-        messaging.MessageReceived += message => speechBubble.Speak(message.Text, simulation.Creature, simulation.Habitat);
-        messaging.StatusChanged += () => { if (messaging.Settings is not { Enabled: true }) speechBubble.Hide(); };
+        messaging.MessageReceived += message =>
+        {
+            flyVoice.Stop();
+            ownerSpeechUntil = clock.Elapsed.TotalSeconds + 12;
+            speechBubble.Speak(message.Text, simulation.Creature, simulation.Habitat);
+        };
         Loaded += (_,_) => messaging.Start();
-        Closed += (_,_) => { messaging.Dispose(); messagingWindow?.Close(); speechBubble.Close(); };
+        Closed += (_,_) => { messaging.Dispose(); messagingWindow?.Close(); conversationWindow?.Close(); conversation.Dispose(); speechBubble.Close(); flyVoice.Dispose(); };
         updateTimer.Tick += Update;
         Loaded += (_,_) => { overlay.Show(); last=clock.Elapsed.TotalSeconds; updateTimer.Start(); CompositionTarget.Rendering += Render; };
         Closed += (_,_) => { updateTimer.Stop(); vision.Dispose(); CompositionTarget.Rendering -= Render; visionWindow?.Close(); overlay.Close(); foreach(var window in sugarWindows) window.Close(); foreach(var window in sprayWindows) window.Close(); foreach(var window in cigaretteWindows) window.Close(); };
     }
     private void Update(object? sender, EventArgs args)
     {
+        if (conversation.IsListening && flyVoice.IsSpeaking) conversation.SuppressVoice();
         double now=clock.Elapsed.TotalSeconds, elapsed=now-last; last=now;
         if(now-topology>2) { simulation.Habitat=Native.ReadHabitat(); simulation.Creature.Position=simulation.Habitat.Constrain(simulation.Creature.Position); topology=now; }
         if(Native.GetCursorPos(out var inputCursor))
@@ -360,6 +415,9 @@ internal sealed class Inspector : Window
             if(simulation.Creature.Velocity.Length>1500) simulation.Creature.Velocity*=1500/simulation.Creature.Velocity.Length;
         }
         lastHeldPosition=simulation.Creature.Position;
+        bool cursorNearby = Native.GetCursorPos(out var actionCursor) &&
+            (new Vec(actionCursor.X, actionCursor.Y) - simulation.Creature.Position).Length < 180;
+        conversation.TickActions(simulation.Held, cursorNearby);
         vision.Advance(now,simulation,paused);
         if(!paused)
         {
@@ -372,13 +430,35 @@ internal sealed class Inspector : Window
                 vision.BrainMeter.Record(Stopwatch.GetElapsedTime(began).TotalSeconds);
                 accumulator-=dt; ticks++;
             }
+            var word = simulation.Brain.Speech.TakeWord();
+            if (word is not null && now >= ownerSpeechUntil && now >= conversationSpeechUntil)
+            {
+                speechBubble.Speak(word, simulation.Creature, simulation.Habitat, 4);
+                SpeakWord(word);
+            }
         }
         else accumulator=0;
-        if(now-sampled>=.1) { if(!paused) graph.Sample(); sampled=now; }
+        if(now-sampled>=.1) { if(!paused) graph?.Sample(); sampled=now; }
         if(now-rateTime>=1)
         {
             status.Text=$"{(paused ? "PAUSED" : "LIVE")}   {frames/(now-rateTime):F0} render FPS   {ticks/(now-rateTime):F0} ticks/s   speed {simulation.Creature.Velocity.Length:F1} px/s   {(double.IsFinite(dropAt) ? $"{(pendingTool == 1 ? "SPRAY" : pendingTool == 2 ? "CIGARETTE" : "SUGAR")} in {Math.Max(0,dropAt-now):F1}s" : $"Spray clouds: {simulation.Spray.Count}")}\n{vision.Status}";
             frames=ticks=0; rateTime=now;
+        }
+    }
+    private void SpeakReply(string word)
+    {
+        conversationSpeechUntil=clock.Elapsed.TotalSeconds+4;
+        speechBubble.Speak(word, simulation.Creature, simulation.Habitat, 4);
+        SpeakWord(word);
+    }
+    private void SpeakWord(string word)
+    {
+        if (!speakAloud) return;
+        conversation.SuppressVoice();
+        if (!flyVoice.Speak(word))
+        {
+            voiceToggle.IsChecked=false;
+            voiceToggle.ToolTip="Windows speech output is unavailable. Speech bubbles still work; check your installed Windows voices and audio output, then enable this again to retry.";
         }
     }
     private void Render(object? sender, EventArgs args)

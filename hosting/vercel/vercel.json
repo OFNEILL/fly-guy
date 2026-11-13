@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "node scripts/build.mjs",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/health", "destination": "/api/index" },
+    { "source": "/api/:path*", "destination": "/api/index" }
+  ],
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "Cache-Control", "value": "no-store" },
+      { "key": "Referrer-Policy", "value": "no-referrer" },
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "X-Frame-Options", "value": "DENY" }
+    ] }
+  ]
+}

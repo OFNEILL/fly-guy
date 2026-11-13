@@ -1,6 +1,8 @@
 # Fly messages
 
-The Windows app can receive owner-written messages as a speech bubble beside its fly. A separate .NET relay holds the user list and routes messages to individual recipients. Receiving is opt-in; **Disconnect** stops it. The Mac frontend does not yet receive messages.
+The Windows app automatically connects to `https://fly-guy-relay.vercel.app/` on launch and receives owner-written messages as a speech bubble beside its fly. Its display name is the computer's local network IP address (IPv4 preferred, then IPv6; loopback if no network is available). The relay address and name are read-only in **Fly messages**. **Disconnect** stops receiving and is remembered across restarts; **Connect / receive messages** enables it again. The Mac frontend does not yet receive messages.
+
+The owner opens the hosted relay in a browser and unlocks it with the production owner key. No key or manual setup is needed for recipients. Registration and polling retry when the relay is unavailable. Saved recipient credentials are reused for the same relay and IP name; changing the IP name or migrating an older local connection registers a new recipient, so old queued messages remain with the old identity.
 
 ## Local setup
 
@@ -18,8 +20,8 @@ Launch the updated Windows app:
 dotnet run --project FlyGuy/FlyGuy.Desktop -c Release
 ```
 
-1. Open **Fly messages** in the inspector. In **Receive messages**, choose a display name, **Connect / receive messages**. That copy of the app now appears in your user list.
-2. Open the **Admin** tab, click **Use local owner key**, then **Sign in as admin**. The list refreshes every ten seconds and shows names, a short user ID, online/offline status and queued messages.
+1. The Windows app uses the hosted relay automatically. To test the local relay separately, use the browser desk below or the messaging checks; the desktop relay address is fixed.
+2. For the hosted relay, open the **Admin** tab, enter the production owner key, then **Sign in as admin**. The list refreshes every ten seconds and shows IP names, a short user ID, online/offline status and queued messages.
 3. Select a user, type up to 500 characters, and click **Send as the fly**. The recipient's fly displays the text in a bubble for twelve seconds. Bubbles follow the fly, stay inside its monitor, and do not take keyboard focus or intercept clicks.
 4. **Sign out** removes the admin session from the panel. Closing the panel also signs out. The admin key is not saved with recipient settings.
 
@@ -27,11 +29,16 @@ No one else can receive messages from this localhost setup on their own computer
 
 ## Connecting other computers later
 
+For a shared HTTPS relay on Vercel with persistent Postgres storage, see
+[Vercel deployment setup](../hosting/vercel/README.md). This uses the same
+Windows messaging protocol and browser desk. The desktop app already uses
+the production relay; a separate deployment requires changing `RelayConnection.RelayAddress` and rebuilding.
+
 ### Browser message desk
 
 Run `powershell -ExecutionPolicy Bypass -File scripts/Start-Messaging.ps1 -CopyOwnerKey`, then open **http://127.0.0.1:5187** in your browser. Paste the copied owner key to unlock the desk, then clear your clipboard and clipboard history if enabled. Select a recipient and send a message. The list refreshes every ten seconds and includes online status and queued message counts. Sign out or reload to clear the key from page memory; the page does not save it in browser storage. Only paste the owner key into a trusted relay page.
 
-This is a local interface for the existing relay. It does not make localhost accessible from another computer. For someone on another network, the relay still needs a reachable HTTPS address as described below, and both machines need internet access. Wi-Fi specifically is not required; Ethernet works too. Recipients must enable receiving in the app, which explains that the owner writes messages. The desk confirms queue acceptance, not reading or guaranteed delivery.
+This is a local interface for the existing relay. It does not make localhost accessible from another computer. The Windows app uses the hosted HTTPS relay and requires internet access; Wi-Fi and Ethernet both work. Receiving is enabled by default, and the messaging panel explains that the owner writes messages. The desk confirms queue acceptance, not reading or guaranteed delivery.
 
 Host `FlyGuy.Relay` on a server behind an HTTPS reverse proxy, with a persistent private data directory. Provide these environment variables to the relay process:
 
@@ -47,7 +54,7 @@ Bind the relay to loopback behind the proxy, for example:
 dotnet run --project FlyGuy/FlyGuy.Relay -c Release -- --urls http://127.0.0.1:5187
 ```
 
-Recipients enter the HTTPS relay address, their chosen display name in **Fly messages**, then connect. You enter the same HTTPS address and your admin key in the Admin tab. The recipient app refuses non-local HTTP addresses; do not disable certificate checking. **Use local owner key** only applies to the local demo, not a remote relay.
+Recipients connect automatically to the built-in HTTPS relay. You enter the production admin key in the Admin tab. The recipient client refuses non-local HTTP addresses; do not disable certificate checking. Local relay keys apply only to the local browser demo.
 
 Only possession of the admin key authorizes listing users or sending messages. Knowing the URL or one's own recipient token does not grant those permissions. Keep the owner Windows profile private and do not share its owner-key file. To rotate server admin key, replace them and restart the relay. Already enrolled recipient tokens continue to work. Remote hosting and deployment are not configured by local setup.
 

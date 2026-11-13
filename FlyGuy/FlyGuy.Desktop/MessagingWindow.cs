@@ -15,8 +15,8 @@ namespace FlyGuy.Desktop;
 internal sealed class MessagingWindow : Window
 {
     private readonly RelayConnection connection;
-    private readonly TextBox server = new() { Text = "http://127.0.0.1:5187", Margin = new Thickness(0,4,0,10) };
-    private readonly TextBox name = new() { Text = "Fly friend", MaxLength = 40, Margin = new Thickness(0,4,0,10) };
+    private readonly TextBox server = new() { Text = RelayConnection.RelayAddress, IsReadOnly = true, Margin = new Thickness(0,4,0,10) };
+    private readonly TextBox name = new() { Text = RelayConnection.DefaultDisplayName(), IsReadOnly = true, Margin = new Thickness(0,4,0,10) };
     private readonly PasswordBox adminKey = new() { Margin = new Thickness(0,4,0,10) };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,10,0,10) };
     private readonly TextBlock adminStatus = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,10,0,10) };
@@ -42,11 +42,11 @@ internal sealed class MessagingWindow : Window
         if (connection.Settings is { } settings) { server.Text = settings.Address; name.Text = settings.DisplayName; }
         var tabs = new TabControl();
         var receive = new StackPanel { Margin = new Thickness(12) };
-        receive.Children.Add(new TextBlock { Text = "Connect to receive speech bubbles written by the relay owner. You can disconnect at any time. No invitation key is needed.", TextWrapping = TextWrapping.Wrap });
-        receive.Children.Add(new TextBlock { Text = "Your display name", Margin = new Thickness(0,12,0,0) }); receive.Children.Add(name);
+        receive.Children.Add(new TextBlock { Text = "Fly messages connect automatically and show speech bubbles written by the relay owner. Your local IP address identifies you in the recipient list. You can disconnect at any time.", TextWrapping = TextWrapping.Wrap });
+        receive.Children.Add(new TextBlock { Text = "Your IP address", Margin = new Thickness(0,12,0,0) }); receive.Children.Add(name);
         AddButton(receive, "Connect / receive messages", () => Run(async () =>
         {
-            await connection.Connect(server.Text, name.Text);
+            await connection.Connect();
         }, status));
         AddButton(receive, "Disconnect", () => Run(() => { connection.Disconnect(); return Task.CompletedTask; }, status));
         receive.Children.Add(status);
@@ -55,12 +55,6 @@ internal sealed class MessagingWindow : Window
         control.Children.Add(new TextBlock { Text = "Admin access", FontSize = 19 });
         control.Children.Add(new TextBlock { Text = "Only the owner key can list users and send messages. Registering as a recipient does not grant access.", TextWrapping = TextWrapping.Wrap });
         control.Children.Add(new TextBlock { Text = "Owner key" }); control.Children.Add(adminKey);
-        AddButton(control, "Use local owner key", () => Run(async () =>
-        {
-            RequireLocalAddress();
-            var keys = RelayConnection.LocalKeys() ?? throw new ArgumentException("Start the local relay first using scripts/Start-Messaging.ps1.");
-            adminKey.Password = RelayConnection.Unprotect(keys.ProtectedAdminKey); await Task.CompletedTask;
-        }, adminStatus));
         AddButton(control, "Sign in as admin", () => Run(async () =>
         {
             var candidate = new RelayClient(server.Text, adminKey.Password);
@@ -94,11 +88,6 @@ internal sealed class MessagingWindow : Window
         refresh.Tick += (_,_) => Run(RefreshUsers, adminStatus);
         server.TextChanged += (_,_) => SignOut();
         Closed += (_,_) => { connection.StatusChanged -= UpdateStatus; SignOut(); };
-    }
-    private void RequireLocalAddress()
-    {
-        var address = RelayClient.ValidateAddress(server.Text);
-        if (!address.IsLoopback || address.Port != 5187) throw new ArgumentException("Local keys are only for the local relay on port 5187.");
     }
     private void UpdateStatus() => status.Text = connection.Status;
     private void SignOut() { refresh.Stop(); admin?.Dispose(); admin = null; adminKey.Clear(); users.Items.Clear(); composer.Visibility = Visibility.Collapsed; }

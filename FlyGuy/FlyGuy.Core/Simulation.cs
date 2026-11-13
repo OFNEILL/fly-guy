@@ -101,6 +101,7 @@ public sealed class Brain
     public double Dopamine { get; private set; }
     public ThreatModulation Threat { get; } = new();
     public NicotineState Nicotine { get; } = new();
+    public PrimitiveSpeech Speech { get; } = new();
     private ThreatSettings threatSettings = new();
     public ThreatSettings ThreatSettings
     {
@@ -228,6 +229,7 @@ public sealed class Brain
         Plasticity.Tick([Activity[28], Activity[29], Activity[30], Activity[31]], Dopamine, Threat.Aversion, Threat.Stress, dt);
         UpdatePlasticConnections();
         for (int i = 11; i < PopulationCount; i++) adaptation[i] = Ease(adaptation[i], Activity[i], 2.5);
+        Speech.Tick(this, dt);
         return new(Activity[16], Activity[18] - Activity[17], Activity[19]);
     }
 }
@@ -261,7 +263,13 @@ public sealed class Simulation(Habitat habitat, int seed = 7)
     public double Touch { get; set; }
     private double reward;
     public double Consumed { get; private set; }
-    public void ResetBrain() { Brain = new(seed) { ThreatSettings = Brain.ThreatSettings }; reward = 0; smokingIntent = 0; }
+    public void ResetBrain()
+    {
+        bool speechEnabled = Brain.Speech.Enabled;
+        Brain = new(seed) { ThreatSettings = Brain.ThreatSettings };
+        Brain.Speech.Enabled = speechEnabled;
+        reward = 0; smokingIntent = 0;
+    }
     public void DropSugar(Vec position) { if(Sugar.Count < 64) Sugar.Add(new(Habitat.Constrain(position))); }
     public void DropCigarette(Vec position)
     {
