@@ -1,5 +1,25 @@
 # Fly messages
 
+## Microphone transcripts and fly AI replies
+
+Local microphone transcription and console sharing start automatically when Fly Guy opens. In
+**Talk and teach**, use **Stop listening** to stop it, or **Start listening** to
+restart it. Uncheck **Share microphone transcripts with the owner console
+(this session)** to keep recognized text local. Recognition runs locally using Windows
+speech recognition; only text is uploaded. Sharing is on by default. Closing
+the panel stops listening and turns sharing off. Turning sharing off clears
+unsent text; already submitted transcripts remain subject to relay expiry.
+
+The hosted owner console shows transcripts for the selected recipient and a
+**Let AI reply as this user's fly** checkbox. When checked, new shared transcripts
+are sent directly to an OpenAI model with a fly character prompt.
+Replies return through the existing inbox as speech bubbles and use local
+speech when **Speak aloud** is enabled. The owner can still send manual messages.
+User microphone audio stays local. Transcript text and AI replies expire after
+24 hours; the console shows at most 100 transcripts per user. See the
+[relay setup](../hosting/vercel/README.md#microphone-transcripts-and-ai-replies)
+for the database migration and AI configuration required before deployment.
+
 The Windows app automatically connects to `https://fly-guy-relay.vercel.app/` on launch and receives owner-written messages as a speech bubble beside its fly. Its display name is the computer's local network IP address (IPv4 preferred, then IPv6; loopback if no network is available). The relay address and name are read-only in **Fly messages**. **Disconnect** stops receiving and is remembered across restarts; **Connect / receive messages** enables it again. The Mac frontend does not yet receive messages.
 
 The owner opens the hosted relay in a browser and unlocks it with the production owner key. No key or manual setup is needed for recipients. Registration and polling retry when the relay is unavailable. Saved recipient credentials are reused for the same relay and IP name; changing the IP name or migrating an older local connection registers a new recipient, so old queued messages remain with the old identity.

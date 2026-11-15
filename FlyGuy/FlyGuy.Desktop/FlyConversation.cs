@@ -21,6 +21,14 @@ internal sealed class FlyConversation : IDisposable
     public string LastHeard { get; private set; } = "";
     public string LastReply { get; private set; } = "";
     public event Action? Changed;
+    public bool ShareTranscripts { get; private set; } = true;
+    public Func<string, bool>? SendTranscript { get; set; }
+    public void SetTranscriptSharing(bool enabled)
+    {
+        ShareTranscripts = enabled;
+        Status = enabled ? "Transcript sharing on for this session. Start listening to send locally recognized text to the owner console and, if enabled there, AI replies." : "Transcript sharing off.";
+        Changed?.Invoke();
+    }
 
     public FlyConversation(Dispatcher dispatcher, Func<Brain> brain, Action<string> respond, Func<bool> canRespond, string? memoryPath = null)
     {
@@ -31,7 +39,7 @@ internal sealed class FlyConversation : IDisposable
             var state = Memory.Export();
             return state.Phrases.Select(p => p.Text).Concat(state.Words.Keys).ToArray();
         });
-        microphone.Heard += text => Hear(text, false);
+        microphone.Heard += HearMicrophone;
         microphone.StatusChanged += message => { Status = message; Changed?.Invoke(); };
         try
         {
@@ -59,6 +67,14 @@ internal sealed class FlyConversation : IDisposable
         { return " Memory changed this session but could not be saved to disk."; }
     }
     public void StartListening() => microphone.Start();
+    internal void HearMicrophone(string text)
+    {
+        if (!ShareTranscripts) { Hear(text, false); return; }
+        LastHeard = text;
+        bool queued = SendTranscript?.Invoke(text) == true;
+        Status = queued ? "Heard: " + text + " — queued for the owner console." : "Transcript not sent. Connect Fly messages, or wait for pending transcripts to send.";
+        Changed?.Invoke();
+    }
     public void StopListening() => microphone.Stop();
     public void SuppressVoice() => microphone.SuppressVoice();
     public void TickActions(bool held, bool cursorNearby)

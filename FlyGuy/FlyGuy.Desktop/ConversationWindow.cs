@@ -25,7 +25,12 @@ internal sealed class ConversationWindow : Window
         CaptureExclusion.Register(this);
         var root = new StackPanel { Margin = new Thickness(20) };
         root.Children.Add(new TextBlock { Text = "Talk to your fly", FontSize = 25 });
-        root.Children.Add(new TextBlock { Text = "Start listening to use your default microphone. Recognition runs locally; audio is not saved or uploaded. Learned words and phrases are saved privately for your Windows account. Closing this panel stops the microphone.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,12,0,12) });
+        root.Children.Add(new TextBlock { Text = "Local transcription and sharing with the owner console start automatically when Fly Guy opens, using your default microphone. Only recognized text is uploaded; audio stays local. Use Stop listening to turn off the microphone, or uncheck transcript sharing to keep text local. Closing this panel stops the microphone and sharing.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,12,0,12) });
+        var share = new CheckBox { Content = "Share microphone transcripts with the owner console (this session)", IsChecked = conversation.ShareTranscripts, Margin = new Thickness(0,6,0,6) };
+        share.Checked += (_,_) => conversation.SetTranscriptSharing(true);
+        share.Unchecked += (_,_) => conversation.SetTranscriptSharing(false);
+        root.Children.Add(share);
+        root.Children.Add(new TextBlock { Text = "When sharing is on, recognized text is sent over the internet to the relay owner and retained for up to 24 hours. The owner can enable OpenAI replies as your fly, which sends recent text to the AI service. Your audio stays on this computer. Local one-word replies are suspended while sharing.", TextWrapping = TextWrapping.Wrap });
         listen.Click += (_,_) => { if (conversation.IsListening) conversation.StopListening(); else conversation.StartListening(); };
         root.Children.Add(listen);
         root.Children.Add(feedback);
@@ -56,7 +61,7 @@ internal sealed class ConversationWindow : Window
         });
         Content = new ScrollViewer { Content = root };
         conversation.Changed += Refresh;
-        Closed += (_,_) => { conversation.Actions.Enabled = false; conversation.StopListening(); conversation.Changed -= Refresh; };
+        Closed += (_,_) => { conversation.Actions.Enabled = false; conversation.StopListening(); conversation.SetTranscriptSharing(false); conversation.Changed -= Refresh; };
         Refresh();
     }
     private void Refresh()

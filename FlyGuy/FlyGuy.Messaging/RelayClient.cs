@@ -33,7 +33,7 @@ public sealed class RelayClient : IDisposable
     {
         http = new(new HttpClientHandler { AllowAutoRedirect = false })
         {
-            BaseAddress = ValidateAddress(address), Timeout = TimeSpan.FromSeconds(10)
+            BaseAddress = ValidateAddress(address), Timeout = TimeSpan.FromSeconds(25)
         };
         if (!string.IsNullOrEmpty(token)) http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     }
@@ -70,6 +70,12 @@ public sealed class RelayClient : IDisposable
     public async Task Acknowledge(Guid messageId, CancellationToken ct = default)
     {
         using var response = await http.PostAsync($"api/inbox/{messageId}/ack", null, ct);
+        await Check(response, ct);
+    }
+    public async Task SendTranscript(Guid id, string text, CancellationToken ct = default)
+    {
+        // AI generation can take longer than ordinary inbox polling.
+        using var response = await http.PostAsJsonAsync("api/transcripts", new { id, text }, ct);
         await Check(response, ct);
     }
     public async Task<RelayUser[]> Users(CancellationToken ct = default)

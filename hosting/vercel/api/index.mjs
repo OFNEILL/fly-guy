@@ -1,5 +1,6 @@
 import { database } from '../lib/database.mjs';
 import { Relay, RelayError } from '../lib/relay.mjs';
+import { flyReply, aiConfigured } from '../lib/fly-ai.mjs';
 
 export function createHandler(getRelay) {
   return async function handler(req, res) {
@@ -42,6 +43,9 @@ export function createHandler(getRelay) {
       }
       if (req.method === 'POST' && path === '/api/join') return reply(200, await relay.join(body.displayName));
       if (req.method === 'GET' && path === '/api/admin/users') return reply(200, await relay.users(token));
+      if (req.method === 'POST' && path === '/api/transcripts') return reply(200, await relay.transcribe(token, body.id, body.text));
+      if (req.method === 'GET' && path === '/api/admin/transcripts') return reply(200, await relay.transcripts(token, new URL(req.url, 'http://localhost').searchParams.get('userId')));
+      if (req.method === 'POST' && path === '/api/admin/ai') return reply(200, await relay.setAi(token, body.userId, body.enabled));
       if (req.method === 'POST' && path === '/api/admin/messages') return reply(200, await relay.send(token, body.userId, body.text));
       if (req.method === 'GET' && path === '/api/inbox') {
         const message = await relay.poll(token);
@@ -61,4 +65,4 @@ export function createHandler(getRelay) {
 }
 
 let relay;
-export default createHandler(() => relay ??= new Relay(database(), process.env.FLYGUY_ADMIN_KEY));
+export default createHandler(() => relay ??= new Relay(database(), process.env.FLYGUY_ADMIN_KEY, { generateReply: flyReply, aiConfigured }));

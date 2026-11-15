@@ -248,6 +248,8 @@ internal sealed class Inspector : Window
         CaptureExclusion.Register(this);
         vision = new(clock);
         conversation = new(Dispatcher, () => simulation.Brain, SpeakReply, () => !paused && clock.Elapsed.TotalSeconds >= ownerSpeechUntil);
+        conversation.SendTranscript = messaging.QueueTranscript;
+        conversation.Changed += () => { if (!conversation.ShareTranscripts) messaging.ClearTranscripts(); };
         Title = developerMode ? "Fly Guy - neural laboratory" : "Fly Guy";
         Width = Math.Min(developerMode ? 1280 : 620, SystemParameters.WorkArea.Width);
         Height = Math.Min(developerMode ? 1000 : 420, SystemParameters.WorkArea.Height);
@@ -374,8 +376,10 @@ internal sealed class Inspector : Window
             flyVoice.Stop();
             ownerSpeechUntil = clock.Elapsed.TotalSeconds + 12;
             speechBubble.Speak(message.Text, simulation.Creature, simulation.Habitat);
+            if (speakAloud) { conversation.SuppressVoice(); flyVoice.Speak(message.Text); }
         };
         Loaded += (_,_) => messaging.Start();
+        Loaded += (_,_) => conversation.StartListening();
         Closed += (_,_) => { messaging.Dispose(); messagingWindow?.Close(); conversationWindow?.Close(); conversation.Dispose(); speechBubble.Close(); flyVoice.Dispose(); };
         updateTimer.Tick += Update;
         Loaded += (_,_) => { overlay.Show(); last=clock.Elapsed.TotalSeconds; updateTimer.Start(); CompositionTarget.Rendering += Render; };

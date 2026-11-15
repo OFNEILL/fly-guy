@@ -9,10 +9,11 @@ const fail = (status, message) => { throw new RelayError(status, message); };
 const messageRow = row => row ? { id: row.id, text: row.text, createdAt: row.created_at } : null;
 
 export class Relay {
-  constructor(pool, adminKey) {
+  constructor(pool, adminKey, { generateReply, aiConfigured = () => false } = {}) {
     if (typeof adminKey !== 'string' || adminKey.length < 32 || adminKey.length > 256)
       throw new Error('FLYGUY_ADMIN_KEY must contain 32-256 characters');
     this.pool = pool; this.adminHash = hash(adminKey);
+    this.generateReply = generateReply; this.aiConfigured = aiConfigured;
   }
   admin(token) {
     if (typeof token !== 'string' || token.length > 256 ||
@@ -59,6 +60,7 @@ export class Relay {
   }
   async prune(client = this.pool) {
     await client.query("DELETE FROM fly_messages WHERE created_at <= now() - interval '24 hours'");
+    await client.query("DELETE FROM fly_transcripts WHERE created_at <= now() - interval '24 hours'");
   }
   async users(token) {
     this.admin(token);
@@ -66,10 +68,70 @@ export class Relay {
     const { rows } = await this.pool.query(`
       SELECT u.id, u.display_name AS "displayName", u.last_seen AS "lastSeen",
         u.last_seen > now() - interval '45 seconds' AS online,
-        count(m.id)::integer AS "pendingMessages"
+        count(m.id)::integer AS "pendingMessages", u.ai_enabled AS "aiEnabled"
       FROM fly_users u LEFT JOIN fly_messages m ON m.user_id = u.id
       GROUP BY u.id ORDER BY online DESC, u.display_name`);
     return rows;
+  }
+  async setAi(token, userId, enabled) {
+    this.admin(token);
+    if (!uuid.test(userId) || typeof enabled !== 'boolean') fail(400, 'Choose a user and an AI reply setting.');
+    if (enabled && !this.aiConfigured()) fail(503, 'AI replies need OPENAI_MODEL and OPENAI_API_KEY on the server.');
+    const { rows } = await this.pool.query('UPDATE fly_users SET ai_enabled = $2, ai_version = ai_version + 1 WHERE id = $1 RETURNING id', [userId, enabled]);
+    if (!rows.length) fail(404, 'Recipient no longer exists.');
+    return { aiEnabled: enabled };
+  }
+  async transcripts(token, userId) {
+    this.admin(token);
+    if (!uuid.test(userId)) fail(400, 'Invalid recipient ID.');
+    await this.prune();
+    const { rows } = await this.pool.query(`SELECT id, text, created_at AS "createdAt",
+      CASE WHEN ai_status = 'generating' AND created_at < now() - interval '1 minute' THEN 'failed' ELSE ai_status END AS "aiStatus",
+      ai_reply AS "aiReply" FROM fly_transcripts WHERE user_id = $1 ORDER BY sequence DESC LIMIT 100`, [userId]);
+    return rows.reverse();
+  }
+  async transcribe(token, transcriptId, text) {
+    const userId = await this.authenticate(token);
+    const value = typeof text === 'string' ? text.trim() : '';
+    if (!uuid.test(transcriptId) || !value || value.length > 2000 || /[\p{Cc}]/u.test(value)) fail(400, 'Transcripts must contain 1-2000 visible characters and a valid ID.');
+    const claim = await this.transaction(async client => {
+      const { rows: [user] } = await client.query('SELECT *, ai_last_started > now() - interval \'12 seconds\' AS cooling FROM fly_users WHERE id = $1 FOR UPDATE', [userId]);
+      const existing = await client.query('SELECT user_id FROM fly_transcripts WHERE id = $1', [transcriptId]);
+      if (existing.rows.length) {
+        if (existing.rows[0].user_id !== userId) fail(409, 'Transcript ID already used.');
+        return null;
+      }
+      await this.prune(client);
+      const status = !user.ai_enabled ? 'off' : user.cooling ? 'cooldown' : 'generating';
+      await client.query('INSERT INTO fly_transcripts(id, user_id, text, ai_status) VALUES ($1, $2, $3, $4)', [transcriptId, userId, value, status]);
+      await client.query('UPDATE fly_users SET last_seen = now() WHERE id = $1', [userId]);
+      await client.query('DELETE FROM fly_transcripts WHERE user_id = $1 AND sequence NOT IN (SELECT sequence FROM fly_transcripts WHERE user_id = $1 ORDER BY sequence DESC LIMIT 100)', [userId]);
+      if (status !== 'generating') return null;
+      await client.query('UPDATE fly_users SET ai_last_started = now() WHERE id = $1', [userId]);
+      return { version: user.ai_version };
+    });
+    if (claim) {
+      try {
+        if (!this.aiConfigured() || !this.generateReply) throw new Error('AI not configured');
+        const { rows } = await this.pool.query('SELECT text, ai_reply FROM fly_transcripts WHERE user_id = $1 ORDER BY sequence DESC LIMIT 10', [userId]);
+        const reply = await this.generateReply(rows.reverse());
+        if (typeof reply !== 'string' || !reply.trim() || reply.length > 500 || /[\p{Cc}]/u.test(reply)) throw new Error('Invalid AI reply');
+        await this.transaction(async client => {
+          const { rows: [user] } = await client.query('SELECT ai_enabled, ai_version FROM fly_users WHERE id = $1 FOR UPDATE', [userId]);
+          const { rows: [inbox] } = await client.query('SELECT count(*)::integer AS count FROM fly_messages WHERE user_id = $1', [userId]);
+          if (!user.ai_enabled || user.ai_version !== claim.version || inbox.count >= 50) {
+            await client.query("UPDATE fly_transcripts SET ai_status = 'cancelled' WHERE id = $1", [transcriptId]);
+            return;
+          }
+          await client.query('INSERT INTO fly_messages(id, user_id, text) VALUES ($1, $2, $3)', [randomUUID(), userId, reply.trim()]);
+          await client.query("UPDATE fly_transcripts SET ai_status = 'sent', ai_reply = $2 WHERE id = $1", [transcriptId, reply.trim()]);
+        });
+      } catch {
+        // Keep the transcript available to the owner, without leaking provider errors or retrying billable calls.
+        await this.pool.query("UPDATE fly_transcripts SET ai_status = 'failed' WHERE id = $1", [transcriptId]);
+      }
+    }
+    return { accepted: true };
   }
   async poll(token) {
     const id = await this.authenticate(token);

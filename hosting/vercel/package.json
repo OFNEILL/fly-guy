@@ -11,6 +11,8 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.143",
+    "ai": "^6.0.332",
     "pg": "^8.16.3"
   },
   "devDependencies": {

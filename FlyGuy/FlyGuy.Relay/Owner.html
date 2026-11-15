@@ -19,6 +19,12 @@
 <div class="row"><strong>Message desk</strong><button id="logout" class="secondary">Sign out</button></div>
 <form id="compose"><label for="recipient">Recipient</label><select id="recipient" required></select>
 <p id="presence" class="muted"></p>
+<section id="voice" hidden>
+<label><input id="ai" type="checkbox" style="width:auto"> Let AI reply as this user's fly</label>
+<p class="muted">Replies use OpenAI. Only users who turn on transcript sharing in their app send text here. Audio stays on their computer. Up to 100 transcripts are kept for 24 hours. AI replies are limited to one every 12 seconds.</p>
+<strong>Microphone transcripts</strong>
+<div id="transcripts" role="log" aria-live="polite" style="max-height:340px;overflow:auto;white-space:pre-wrap"></div>
+</section>
 <label for="message">What should the fly say?</label><textarea id="message" required maxlength="500" placeholder="Write a message…"></textarea>
 <div class="row"><small id="count">0 / 500</small><button id="send">Send as the fly</button></div></form>
 <button id="refresh" class="secondary">Refresh recipients</button>
@@ -29,14 +35,17 @@
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let key='', users=[], timer, generation=0;
-function signout(){generation++;key='';clearInterval(timer);$('key').value='';$('message').value='';$('count').textContent='0 / 500';$('recipient').replaceChildren();users=[];$('desk').hidden=true;$('login').hidden=false;}
+let key='', users=[], timer, generation=0, transcriptGeneration=0, aiSaving=false;
+function signout(){generation++;transcriptGeneration++;key='';clearInterval(timer);$('key').value='';$('message').value='';$('count').textContent='0 / 500';$('recipient').replaceChildren();$('transcripts').replaceChildren();$('ai').checked=false;users=[];$('desk').hidden=true;$('login').hidden=false;}
 async function api(path,body){const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(10000),cache:'no-store'});if(!response.ok){if(response.status===401){signout();throw Error('Access denied. Check your owner key.');}let error;try{error=(await response.json()).error;}catch{}throw Error(error||'Request failed ('+response.status+').');}return response.json();}
-function presence(){const user=users.find(u=>u.id===$('recipient').value);$('presence').textContent=user?`${user.online?'Online':'Offline'} · ${user.pendingMessages} queued message(s)`:'No recipients yet. Enable receiving in a recipient app.';$('send').disabled=!user;}
+function presence(){const user=users.find(u=>u.id===$('recipient').value);$('presence').textContent=user?`${user.online?'Online':'Offline'} · ${user.pendingMessages} queued message(s)`:'No recipients yet. Enable receiving in a recipient app.';$('send').disabled=!user;$('voice').hidden=!user||typeof user.aiEnabled!=='boolean';$('ai').disabled=!user||aiSaving;if(!aiSaving)$('ai').checked=Boolean(user?.aiEnabled);}
+async function loadTranscripts(){const user=users.find(u=>u.id===$('recipient').value);const request=++transcriptGeneration;const current=generation;if(!user||typeof user.aiEnabled!=='boolean'){$('transcripts').replaceChildren();return;}const rows=await api('/api/admin/transcripts?userId='+encodeURIComponent(user.id));if(current!==generation||request!==transcriptGeneration||user.id!==$('recipient').value)return;const atBottom=$('transcripts').scrollHeight-$('transcripts').scrollTop-$('transcripts').clientHeight<30;$('transcripts').replaceChildren(...rows.map(row=>{const entry=document.createElement('p');entry.textContent=new Date(row.createdAt).toLocaleTimeString()+' · '+row.text+'\nAI: '+({off:'Off',cooldown:'Skipped during reply cooldown',generating:'Generating…',failed:'Failed — send a manual message or check server AI configuration',cancelled:'Cancelled',sent:row.aiReply}[row.aiStatus]||row.aiStatus);return entry;}));if(!rows.length)$('transcripts').textContent='No transcripts yet. The user must enable sharing and start listening in Talk and teach.';if(atBottom)$('transcripts').scrollTop=$('transcripts').scrollHeight;}
 async function refresh(){const current=generation;const result=await api('/api/admin/users');if(current!==generation)return;users=result;const selected=$('recipient').value;$('recipient').replaceChildren(...users.map(user=>{const option=document.createElement('option');option.value=user.id;option.textContent=`${user.displayName} · ${user.id.slice(0,8)} · ${user.online?'online':'offline'}`;return option;}));if(users.some(u=>u.id===selected))$('recipient').value=selected;presence();}
 $('signin').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;key=$('key').value.trim();try{await refresh();$('key').value='';$('login').hidden=true;$('desk').hidden=false;$('status').textContent='Connected. Recipients refresh every 10 seconds.';timer=setInterval(()=>refresh().catch(error=>$('status').textContent=error.message),10000);}catch(error){key='';$('status').textContent=error.message;}finally{button.disabled=false;}};
 $('logout').onclick=()=>{signout();$('status').textContent='Signed out.';};
-$('recipient').onchange=presence;
+$('recipient').onchange=()=>{presence();$('transcripts').replaceChildren();loadTranscripts().catch(error=>$('status').textContent=error.message);};
+$('ai').onchange=async()=>{const userId=$('recipient').value;const enabled=$('ai').checked;const current=generation;aiSaving=true;presence();try{await api('/api/admin/ai',{userId,enabled});if(current!==generation)return;const user=users.find(u=>u.id===userId);if(user)user.aiEnabled=enabled;$('status').textContent=enabled?'AI replies enabled for this user. New shared transcripts will receive fly replies.':'AI replies disabled for this user.';}catch(error){if(current===generation)$('status').textContent=error.message;}finally{aiSaving=false;presence();}};
+setInterval(()=>{if(key&&!$('desk').hidden)loadTranscripts().catch(error=>$('status').textContent=error.message);},5000);
 $('message').oninput=()=>$('count').textContent=$('message').value.length+' / 500';
 $('refresh').onclick=()=>refresh().catch(error=>$('status').textContent=error.message);
 $('compose').onsubmit=async event=>{event.preventDefault();const text=$('message').value.trim();if(!text)return;const current=generation;$('send').disabled=true;try{await api('/api/admin/messages',{userId:$('recipient').value,text});if(current!==generation)return;$('message').value='';$('count').textContent='0 / 500';$('status').textContent='Message queued. This confirms acceptance, not that it has been read.';await refresh();}catch(error){$('status').textContent=error.message+' If delivery is uncertain, refresh before retrying.';}finally{presence();}};

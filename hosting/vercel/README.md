@@ -41,7 +41,49 @@ Generate the key locally (the result is a secret, so do not paste it into chat):
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-## Local checks
+## Microphone transcripts and AI replies
+
+The Windows **Talk and teach** panel has a session checkbox to share
+microphone transcripts, enabled by default. Local listening starts automatically on app launch;
+users can stop or restart it in that panel. Closing the panel stops
+listening and turns sharing off. Users can uncheck sharing to keep text local.
+Windows speech recognition runs locally. Only
+recognized text is uploaded using that user's recipient token; raw audio is
+never sent to the relay or the model. Pending text is kept in memory (20 phrases
+maximum), cleared when sharing is turned off or messaging is disconnected, and
+retried with stable IDs to prevent duplicate AI replies.
+
+In the owner desk, select a user to see their latest 100 microphone transcripts.
+Select **Let AI reply as this user's fly** to generate replies automatically for
+new transcripts. The toggle defaults to off and persists per user. Replies use
+the latest ten transcripts and their AI responses from that user, then enter
+the existing message inbox and appear as a bubble with optional local speech.
+Transcript sharing suspends local one-word microphone replies. Typed phrases
+still use the existing local conversation controls.
+
+Before deploying this change, run `npm run db:init` against the target database
+to apply the idempotent additions in `schema.sql`. Configure `OPENAI_MODEL`
+with an OpenAI text model ID supporting the Responses API, and set
+`OPENAI_API_KEY` in the server environment. This calls OpenAI directly using
+the AI SDK's OpenAI provider, with response storage disabled (`store: false`).
+The OpenAI API account needs API billing; a ChatGPT subscription does not
+provide API credit. No model credentials belong in the desktop app or owner page.
+
+AI calls have a 15-second timeout, no automatic provider retries and a
+12-second cooldown per user. Transcripts arriving during the cooldown remain
+visible but do not generate a reply. Generation failures remain visible as
+failed; the owner can send a manual message. Turning AI off cancels delivery
+of in-flight generations, including after toggling it back on. Already queued
+messages retain normal delivery semantics. Transcript IDs make upload retries
+idempotent. Inbox limits still apply. Transcripts expire after 24 hours and are
+pruned during relay traffic. The legacy .NET localhost relay retains manual
+messaging only; this feature uses the Node/Postgres relay.
+
+The automated checks exercise the local protocol with simulated model replies.
+A real microphone, live provider response and installed-app upgrade still
+require an end-to-end check in the configured deployment.
+
+## Running checks
 
 Node 24 is used in production. From this directory:
 

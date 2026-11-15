@@ -42,7 +42,7 @@ internal sealed class MessagingWindow : Window
         if (connection.Settings is { } settings) { server.Text = settings.Address; name.Text = settings.DisplayName; }
         var tabs = new TabControl();
         var receive = new StackPanel { Margin = new Thickness(12) };
-        receive.Children.Add(new TextBlock { Text = "Fly messages connect automatically and show speech bubbles written by the relay owner. Your local IP address identifies you in the recipient list. You can disconnect at any time.", TextWrapping = TextWrapping.Wrap });
+        receive.Children.Add(new TextBlock { Text = "Fly messages connect automatically and show speech bubbles from the relay owner. If you share transcripts in Talk and teach, the owner can enable AI replies as your fly. Your local IP address identifies you in the recipient list. You can disconnect at any time.", TextWrapping = TextWrapping.Wrap });
         receive.Children.Add(new TextBlock { Text = "Your IP address", Margin = new Thickness(0,12,0,0) }); receive.Children.Add(name);
         AddButton(receive, "Connect / receive messages", () => Run(async () =>
         {

@@ -5,12 +5,81 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { Script } from 'node:vm';
 import { PGlite } from '@electric-sql/pglite';
 import { Relay } from '../lib/relay.mjs';
 import { createHandler } from '../api/index.mjs';
 
 const key = 'test-owner-secret-'.repeat(4);
 const schema = await readFile(new URL('../schema.sql', import.meta.url), 'utf8');
+const ownerPage = await readFile(new URL('../../../FlyGuy/FlyGuy.Relay/Owner.html', import.meta.url), 'utf8');
+new Script(ownerPage.match(/<script>([\s\S]*?)<\/script>/)[1]);
+
+test('microphone text authorization, AI opt-in, deduplication, cooldown, failures and cancellation', async () => {
+  const db = new PGlite();
+  await db.exec(schema); await db.exec(schema); // Existing installations can run the migration again.
+  const pool = poolFor(db);
+  let calls = 0, seen, responder = async history => { calls++; seen = history; return 'Buzz! I found a sugar crumb for you.'; };
+  const relay = new Relay(pool, key, { aiConfigured: () => true, generateReply: history => responder(history) });
+  const server = createServer(createHandler(() => relay));
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const api = (path, token, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  try {
+    const alice = await relay.join('Alice'), bob = await relay.join('Bob');
+    assert.equal((await api('/api/transcripts', key, { id: randomUUID(), text: 'Hello' })).status, 401);
+    assert.equal((await api('/api/admin/ai', alice.token, { userId: alice.id, enabled: true })).status, 401);
+    assert.equal((await api('/api/admin/transcripts?userId='+alice.id, bob.token)).status, 401);
+    assert.equal((await api('/api/admin/ai', key, { userId: alice.id, enabled: 'yes' })).status, 400);
+    assert.equal((await api('/api/transcripts', alice.token, { id: randomUUID(), text: 'x'.repeat(2001) })).status, 400);
+    const first = { id: randomUUID(), text: 'Hello tiny fly' };
+    assert.equal((await api('/api/transcripts', alice.token, first)).status, 200);
+    assert.equal(calls, 0);
+    assert.equal((await relay.transcripts(key, alice.id))[0].aiStatus, 'off');
+    assert.equal((await relay.transcripts(key, bob.id)).length, 0);
+    await relay.transcribe(bob.token, randomUUID(), 'Private Bob speech');
+    assert.equal((await api('/api/admin/ai', key, { userId: alice.id, enabled: true })).status, 200);
+    assert.equal((await relay.users(key)).find(u => u.id === alice.id).aiEnabled, true);
+    const second = { id: randomUUID(), text: 'Did you find any sugar?' };
+    await Promise.all([api('/api/transcripts', alice.token, second), api('/api/transcripts', alice.token, second)]);
+    assert.equal(calls, 1);
+    assert.equal(seen.at(-1).text, second.text);
+    assert.ok(seen.every(item => item.text !== 'Private Bob speech'), 'Another user entered AI context');
+    assert.equal((await relay.transcripts(key, alice.id)).length, 2);
+    assert.equal((await relay.transcripts(key, alice.id))[1].aiStatus, 'sent');
+    const message = await relay.poll(alice.token);
+    assert.equal(message.text, 'Buzz! I found a sugar crumb for you.');
+    assert.equal(await relay.poll(bob.token), null);
+    await relay.acknowledge(alice.token, message.id);
+    assert.equal((await api('/api/transcripts', bob.token, second)).status, 409);
+    await relay.transcribe(alice.token, randomUUID(), 'Another phrase');
+    assert.equal(calls, 1);
+    assert.equal((await relay.transcripts(key, alice.id)).at(-1).aiStatus, 'cooldown');
+    await pool.query('UPDATE fly_users SET ai_last_started = NULL');
+    responder = async () => { throw new Error('secret provider error'); };
+    const failed = randomUUID();
+    await relay.transcribe(alice.token, failed, 'Can you hear me?');
+    await relay.transcribe(alice.token, failed, 'Can you hear me?');
+    assert.equal((await relay.transcripts(key, alice.id)).at(-1).aiStatus, 'failed');
+    assert.equal(await relay.poll(alice.token), null);
+    await pool.query('UPDATE fly_users SET ai_last_started = NULL');
+    let finish, started;
+    const generating = new Promise(resolve => { started = resolve; });
+    responder = () => { started(); return new Promise(resolve => { finish = resolve; }); };
+    const pending = relay.transcribe(alice.token, randomUUID(), 'Please reply');
+    await generating;
+    await relay.setAi(key, alice.id, false);
+    await relay.setAi(key, alice.id, true); // A toggle back on must not revive the old request.
+    finish('Buzz!'); await pending;
+    assert.equal(await relay.poll(alice.token), null);
+    assert.equal((await relay.transcripts(key, alice.id)).at(-1).aiStatus, 'cancelled');
+    assert.equal((await api('/api/admin/transcripts?userId='+alice.id, key)).status, 200);
+    await assert.rejects(new Relay(pool, key).setAi(key, bob.id, true), error => error.status === 503);
+    await pool.query("UPDATE fly_transcripts SET created_at = now() - interval '25 hours'");
+    assert.equal((await relay.transcripts(key, alice.id)).length, 0);
+  } finally { await new Promise(resolve => server.close(resolve)); await db.close(); }
+});
 
 // PGlite runs the real Postgres engine in-process. Serialize access because it
 // has one connection; production pg uses server-side row locks across instances.

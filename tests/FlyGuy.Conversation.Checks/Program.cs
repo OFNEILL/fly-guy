@@ -70,6 +70,31 @@ internal static class Program
             }
             Console.WriteLine("PASS: DPAPI persistence, taught response after reload, clearing and pause gating.");
 
+            var uploaded = new List<string>();
+            int localReplies = 0;
+            using (var sharing = new FlyConversation(Dispatcher.CurrentDispatcher, () => brain, _ => localReplies++, () => true, path))
+            {
+                sharing.SendTranscript = text => { uploaded.Add(text); return true; };
+                Require(sharing.ShareTranscripts, "Transcript sharing must start on.");
+                sharing.SetTranscriptSharing(false);
+                sharing.HearMicrophone("hello");
+                Require(uploaded.Count == 0, "Microphone text uploaded while sharing was disabled.");
+                int previousReplies = localReplies;
+                sharing.SetTranscriptSharing(true);
+                sharing.HearMicrophone("Do you like sugar?");
+                sharing.HearMicrophone("open notepad");
+                Require(uploaded.SequenceEqual(new[] { "Do you like sugar?", "open notepad" }), "Shared microphone phrases were lost or changed.");
+                Require(localReplies == previousReplies, "Local reply competed with remote AI.");
+                sharing.SendTranscript = _ => false;
+                sharing.HearMicrophone("Disconnected");
+                Require(sharing.Status.Contains("not sent"), "Upload rejection was not explained.");
+                sharing.SetTranscriptSharing(false);
+                sharing.HearMicrophone("stop sharing");
+                Require(uploaded.Count == 2, "Sharing continued after opt-out.");
+            }
+            Console.WriteLine("PASS: transcript sharing on by default, unmodified text forwarding, local reply suppression and opt-out.");
+            if (Environment.GetCommandLineArgs().Contains("--transcripts-only")) return 0;
+
             using var microphone = new FlyMicrophone(Dispatcher.CurrentDispatcher);
             string status = "";
             microphone.StatusChanged += message => status = message;

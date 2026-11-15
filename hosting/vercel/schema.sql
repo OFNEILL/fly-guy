@@ -21,3 +21,17 @@ CREATE TABLE IF NOT EXISTS fly_rate_limits (
     expires_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS fly_rate_expiry ON fly_rate_limits(expires_at);
+ALTER TABLE fly_users ADD COLUMN IF NOT EXISTS ai_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE fly_users ADD COLUMN IF NOT EXISTS ai_version integer NOT NULL DEFAULT 0;
+ALTER TABLE fly_users ADD COLUMN IF NOT EXISTS ai_last_started timestamptz;
+CREATE TABLE IF NOT EXISTS fly_transcripts (
+    sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id uuid NOT NULL UNIQUE,
+    user_id uuid NOT NULL REFERENCES fly_users(id),
+    text text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    ai_status text NOT NULL DEFAULT 'off',
+    ai_reply text
+);
+CREATE INDEX IF NOT EXISTS fly_transcripts_user ON fly_transcripts(user_id, sequence);
+CREATE INDEX IF NOT EXISTS fly_transcripts_expiry ON fly_transcripts(created_at);

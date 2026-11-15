@@ -38,6 +38,14 @@ internal sealed class RelayConnection : IDisposable
     public static LocalRelayKeys? LocalKeys() => File.Exists(Path.Combine(SettingsDirectory, "relay-owner.json"))
         ? JsonSerializer.Deserialize<LocalRelayKeys>(File.ReadAllText(Path.Combine(SettingsDirectory, "relay-owner.json"))) : null;
     private CancellationTokenSource? receiving;
+    private readonly Queue<(Guid Id, string Text)> transcripts = new();
+    public bool QueueTranscript(string text)
+    {
+        if (Settings is not { Enabled: true } || transcripts.Count >= 20 || string.IsNullOrWhiteSpace(text) || text.Length > 2000) return false;
+        transcripts.Enqueue((Guid.NewGuid(), text.Trim()));
+        return true;
+    }
+    public void ClearTranscripts() => transcripts.Clear();
     public RelaySettings? Settings { get; private set; }
     public string Status { get; private set; } = "Connecting to Fly messages automatically.";
     public event Action? StatusChanged;
@@ -92,6 +100,13 @@ internal sealed class RelayConnection : IDisposable
                         Save();
                     }
                     using var client = new RelayClient(RelayAddress, Unprotect(settings.ProtectedToken));
+                    if (transcripts.TryPeek(out var transcript))
+                    {
+                        await client.SendTranscript(transcript.Id, transcript.Text, cancellation.Token);
+                        cancellation.Token.ThrowIfCancellationRequested();
+                        if (transcripts.TryPeek(out var pending) && pending.Id == transcript.Id) transcripts.Dequeue();
+                    }
+                    if (transcripts.Count > 0) delaySeconds = 1;
                     var message = await client.Poll(cancellation.Token);
                     cancellation.Token.ThrowIfCancellationRequested();
                     SetStatus($"Connected as {settings.DisplayName}. Waiting for fly messages.");
@@ -133,6 +148,7 @@ internal sealed class RelayConnection : IDisposable
     public void Disconnect()
     {
         receiving?.Cancel();
+        ClearTranscripts();
         if (Settings is not null) { Settings = Settings with { Enabled = false }; Save(); }
         SetStatus("Fly messages are off.");
     }
