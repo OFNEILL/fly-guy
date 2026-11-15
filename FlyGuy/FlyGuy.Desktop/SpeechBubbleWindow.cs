@@ -31,7 +31,7 @@ internal sealed class SpeechBubbleWindow : Window
             Fill = Brushes.Teal, Height = 14, HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch
         });
         Content = stack;
-        CaptureExclusion.Register(this);
+        // Speech belongs with the creature in screen shares and recordings.
         SourceInitialized += (_,_) =>
         {
             handle = new WindowInteropHelper(this).Handle;

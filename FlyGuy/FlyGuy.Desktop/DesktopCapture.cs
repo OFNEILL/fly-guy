@@ -25,7 +25,7 @@ internal static class CaptureExclusion
         {
             handle = new WindowInteropHelper(window).Handle;
             if (!SetWindowDisplayAffinity(handle, 0x11))
-                lock (gate) failures[handle] = "Cannot exclude debugger/self from capture: " + new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                lock (gate) failures[handle] = "Cannot exclude debug window from capture: " + new Win32Exception(Marshal.GetLastWin32Error()).Message;
         };
         window.Closed += (_,_) => { lock (gate) failures.Remove(handle); };
     }

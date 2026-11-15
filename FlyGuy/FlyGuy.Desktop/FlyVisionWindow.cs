@@ -132,7 +132,7 @@ internal sealed class VisionView(VisionRuntime vision, Simulation simulation) : 
         Text(dc,$"Heading sin/cos {senses[9]:F3}/{senses[10]:F3}; ingestion {senses[17]:F3}",sx,518);
         Text(dc,$"Visual change {senses[7]:F3}; motion {senses[16]:F3}; quiet {senses[8]:F3}; looming disabled",sx,543);
         Text(dc,$"Motor neurons: thrust {simulation.Motor.Forward:F3}; turn {simulation.Motor.Turn:F3}; brake {simulation.Motor.Brake:F3}",sx,578,13);
-        Text(dc,"Debug windows and the creature are excluded from capture. Sugar and spray remain visible.",20,730,12);
+        Text(dc,"Debug windows are excluded from capture. The creature, speech, sugar and spray remain visible.",20,730,12);
         Text(dc,"No OCR, object labels, cursor coordinates, or semantic desktop data reach the brain.",20,750,12);
         if (ShowMap) DrawMap(dc);
         vision.EyePaintMeter.Record(System.Diagnostics.Stopwatch.GetElapsedTime(began).TotalSeconds);

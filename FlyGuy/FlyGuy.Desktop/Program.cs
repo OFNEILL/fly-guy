@@ -78,7 +78,7 @@ internal sealed class Overlay : Window
     private nint handle;
     public Overlay(Simulation simulation)
     {
-        CaptureExclusion.Register(this);
+        // Keep the creature visible to screen sharing and recording tools.
         Width = Height = 96; WindowStyle = WindowStyle.None; AllowsTransparency = true;
         Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false;
         ShowActivated = false; ResizeMode = ResizeMode.NoResize; IsHitTestVisible = true;

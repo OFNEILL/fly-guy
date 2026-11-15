@@ -4,6 +4,8 @@ The desktop application now uses `desktop pixels -> two retinas -> local contras
 
 Open **Fly Vision** in the main inspector. The five modes show both eyes side by side while simulation continues. Settings apply live; changing geometry or rates clears visual temporal history. Closing the viewer does not stop vision. Closing the main inspector stops capture and exits the application.
 
+The creature and speech bubble are included in desktop capture so they can appear in full-screen shares and recordings. They can also appear in the fly's own visual input. Diagnostic windows remain excluded to prevent visual feedback from their displays. Share the entire monitor to include the separate creature overlay; sharing an individual application's window may omit it.
+
 ## Research and chosen approximation
 
 The Drosophila compound eye has roughly 750 ommatidia per eye, with R1–R6 photoreceptors contributing to motion vision and angular sampling on the order of 4.5 degrees. Its physiology and active photoreceptor sampling are much richer than a fixed camera grid ([Juusola et al., 2017, primary research](https://elifesciences.org/articles/26117)). This model intentionally uses only **24 angular columns × 10 distance rows per eye**, with approximately 5.8-degree angular spacing at the default FOV. It does not model neural superposition, microsaccades or 750 biological ommatidia.
